@@ -65,8 +65,9 @@ type AWSConfig struct {
 
 // AzureConfig holds Azure specific configuration.
 type AzureConfig struct {
-	Enabled        bool   `toml:"enabled"`
-	SubscriptionID string `toml:"subscriptionId"`
+	Enabled                bool   `toml:"enabled"`
+	SubscriptionID         string `toml:"subscriptionId"`
+	PollingIntervalSeconds int    `toml:"pollingIntervalSeconds"`
 }
 
 // LoadConfig reads the configuration from a TOML file.
@@ -198,6 +199,15 @@ func validateCSPConfig(cfg *Config) error {
 			"aws.pollingIntervalSeconds must be at least %d seconds (got %d)",
 			minCSPSpecificPollingIntervalSeconds,
 			cfg.AWS.PollingIntervalSeconds,
+		)
+	}
+
+	// Validate Azure polling interval
+	if cfg.Azure.Enabled && cfg.Azure.PollingIntervalSeconds < minCSPSpecificPollingIntervalSeconds {
+		return fmt.Errorf(
+			"azure.pollingIntervalSeconds must be at least %d seconds (got %d)",
+			minCSPSpecificPollingIntervalSeconds,
+			cfg.Azure.PollingIntervalSeconds,
 		)
 	}
 
