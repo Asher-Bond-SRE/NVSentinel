@@ -65,7 +65,8 @@ type AWSConfig struct {
 
 // AzureConfig holds Azure specific configuration.
 type AzureConfig struct {
-	Enabled bool `toml:"enabled"`
+	Enabled        bool   `toml:"enabled"`
+	SubscriptionID string `toml:"subscriptionId"`
 }
 
 // LoadConfig reads the configuration from a TOML file.

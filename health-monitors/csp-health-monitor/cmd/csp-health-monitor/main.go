@@ -260,7 +260,7 @@ func initActiveMonitor(
 	if cfg.Azure.Enabled {
 		slog.Info("Azure configuration is enabled.")
 
-		azureMonitor, err := azureclient.NewClient()
+		azureMonitor, err := azureclient.NewClient(cfg.Azure)
 		if err != nil {
 			metrics.CSPMonitorErrors.WithLabelValues(string(model.CSPAzure), "init_error").Inc()
 			slog.Error("Failed to initialize Azure monitor. Azure will not be monitored.", "error", err)
