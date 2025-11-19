@@ -12,7 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
-	pb "github.com/nvidia/nvsentinel/data-models/pkg/protos"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/maintenance/armmaintenance"
 	"github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/config"
 	"github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/datastore"
 	eventpkg "github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/event"
@@ -30,11 +30,13 @@ import (
 type Client struct {
 	config                config.AzureConfig
 	VirtualMachinesClient *armcompute.VirtualMachinesClient
+	UpdatesClient         *armmaintenance.UpdatesClient
 	k8sClient             kubernetes.Interface
 	normalizer            eventpkg.Normalizer
 	clusterName           string
 	kubeconfigPath        string
 	store                 datastore.Store
+	subscriptionID        string
 }
 
 // NewClient builds and initialises a new Azure monitoring Client.
@@ -62,7 +64,13 @@ func NewClient(
 		return nil, fmt.Errorf("Failed to create Azure client: %w", err)
 	}
 
-	slog.Info("Successfully initialized Azure VM client", "subscriptionID", subscriptionID)
+	// Create maintenance updates client
+	updatesClient, err := armmaintenance.NewUpdatesClient(subscriptionID, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create Azure maintenance client: %w", err)
+	}
+
+	slog.Info("Successfully initialized Azure VM and maintenance clients", "subscriptionID", subscriptionID)
 
 	// Initialize Kubernetes client
 	var k8sClient kubernetes.Interface
@@ -98,11 +106,13 @@ func NewClient(
 	return &Client{
 		config:                cfg,
 		VirtualMachinesClient: vmClient,
+		UpdatesClient:         updatesClient,
 		k8sClient:             k8sClient,
 		normalizer:            normalizer,
 		clusterName:           clusterName,
 		kubeconfigPath:        kubeconfigPath,
 		store:                 store,
+		subscriptionID:        subscriptionID,
 	}, nil
 }
 
@@ -179,44 +189,77 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 				return
 			}
 
-			// Get the VM instance view from Azure
-			instanceViewResp, err := c.VirtualMachinesClient.InstanceView(ctx, resourceGroup, vmName, nil)
-			if err != nil {
-				metrics.CSPAPIErrors.WithLabelValues(string(model.CSPAzure), "instance_view_error").Inc()
-				slog.Error("Failed to get Azure VM instance view",
-					"node", node.Name,
-					"resourceGroup", resourceGroup,
-					"vmName", vmName,
-					"error", err)
-				return
-			}
+			// Build the resource path for the Updates API
+			resourcePath := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Compute/virtualMachines/%s",
+				c.subscriptionID, resourceGroup, vmName)
 
-			// Check if there's a maintenance event
-			if instanceViewResp.MaintenanceRedeployStatus != nil {
-				metrics.CSPEventsReceived.WithLabelValues(string(model.CSPAzure)).Inc()
+			// Query the Azure Maintenance Updates API
+			pager := c.UpdatesClient.NewListPager(
+				resourceGroup,
+				"Microsoft.Compute",
+				"virtualMachines",
+				vmName,
+				nil,
+			)
 
-				slog.Info("Detected Azure maintenance event",
-					"node", node.Name,
-					"resourceGroup", resourceGroup,
-					"vmName", vmName)
-
-				// Create and send the maintenance event
-				event := c.createMaintenanceEvent(
-					&node,
-					resourceGroup,
-					vmName,
-					instanceViewResp.MaintenanceRedeployStatus,
-				)
-
-				// Send the event to the channel
-				select {
-				case eventChan <- event:
-					slog.Debug("Sent maintenance event to channel",
-						"eventID", event.EventID,
-						"node", event.NodeName)
-				case <-ctx.Done():
-					slog.Info("Context cancelled while sending event")
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					metrics.CSPAPIErrors.WithLabelValues(string(model.CSPAzure), "updates_list_error").Inc()
+					slog.Error("Failed to get Azure maintenance updates",
+						"node", node.Name,
+						"resourceGroup", resourceGroup,
+						"vmName", vmName,
+						"error", err)
 					return
+				}
+
+				// Process each update
+				for _, update := range page.Value {
+					// Only process relevant update statuses
+					if update.Status == nil {
+						continue
+					}
+
+					status := string(*update.Status)
+					if status == "Pending" || status == "InProgress" || status == "RetryNow" {
+						metrics.CSPEventsReceived.WithLabelValues(string(model.CSPAzure)).Inc()
+
+						slog.Info("Detected Azure maintenance update",
+							"node", node.Name,
+							"resourceGroup", resourceGroup,
+							"vmName", vmName,
+							"status", status)
+
+						// Normalize the event using the normalizer
+						nodeInfo := map[string]interface{}{
+							"nodeName":      node.Name,
+							"providerID":    node.Spec.ProviderID,
+							"clusterName":   c.clusterName,
+							"resourceGroup": resourceGroup,
+							"vmName":        vmName,
+							"resourcePath":  resourcePath,
+						}
+
+						event, err := c.normalizer.Normalize(update, nodeInfo)
+						if err != nil {
+							slog.Error("Failed to normalize Azure maintenance event",
+								"node", node.Name,
+								"error", err)
+							continue
+						}
+
+						// Send the event to the channel
+						select {
+						case eventChan <- *event:
+							slog.Debug("Sent maintenance event to channel",
+								"eventID", event.EventID,
+								"node", event.NodeName)
+						case <-ctx.Done():
+							slog.Info("Context cancelled while sending event")
+							return
+						}
+					}
 				}
 			}
 		}(node)
@@ -226,76 +269,6 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 	wg.Wait()
 
 	slog.Debug("Completed Azure maintenance event poll")
-}
-
-// createMaintenanceEvent creates a normalized maintenance event from Azure data.
-func (c *Client) createMaintenanceEvent(
-	node *v1.Node,
-	resourceGroup string,
-	vmName string,
-	maintenanceStatus *armcompute.MaintenanceRedeployStatus,
-) model.MaintenanceEvent {
-	now := time.Now().UTC()
-
-	// Generate a unique event ID based on the VM and timestamp
-	eventID := fmt.Sprintf("azure-%s-%s-%d", resourceGroup, vmName, now.Unix())
-
-	// Create metadata map
-	metadata := map[string]string{
-		"resourceGroup": resourceGroup,
-		"vmName":        vmName,
-		"providerID":    node.Spec.ProviderID,
-	}
-
-	// Add maintenance window information if available
-	if maintenanceStatus.MaintenanceWindowStartTime != nil {
-		metadata["maintenanceWindowStartTime"] = maintenanceStatus.MaintenanceWindowStartTime.Format(time.RFC3339)
-	}
-	if maintenanceStatus.MaintenanceWindowEndTime != nil {
-		metadata["maintenanceWindowEndTime"] = maintenanceStatus.MaintenanceWindowEndTime.Format(time.RFC3339)
-	}
-	if maintenanceStatus.LastOperationResultCode != nil {
-		metadata["lastOperationResultCode"] = string(*maintenanceStatus.LastOperationResultCode)
-	}
-	if maintenanceStatus.LastOperationMessage != nil {
-		metadata["lastOperationMessage"] = *maintenanceStatus.LastOperationMessage
-	}
-
-	// Determine status based on maintenance information
-	status := model.StatusDetected
-	cspStatus := model.CSPStatusUnknown
-	if maintenanceStatus.IsCustomerInitiatedMaintenanceAllowed != nil && *maintenanceStatus.IsCustomerInitiatedMaintenanceAllowed {
-		cspStatus = model.CSPStatusPending
-	}
-
-	// Extract scheduled times
-	var scheduledStartTime, scheduledEndTime *time.Time
-	if maintenanceStatus.MaintenanceWindowStartTime != nil {
-		scheduledStartTime = maintenanceStatus.MaintenanceWindowStartTime
-	}
-	if maintenanceStatus.MaintenanceWindowEndTime != nil {
-		scheduledEndTime = maintenanceStatus.MaintenanceWindowEndTime
-	}
-
-	event := model.MaintenanceEvent{
-		EventID:                eventID,
-		CSP:                    model.CSPAzure,
-		ClusterName:            c.clusterName,
-		ResourceType:           "VirtualMachine",
-		ResourceID:             fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", "unknown", resourceGroup, vmName),
-		MaintenanceType:        model.TypeScheduled,
-		Status:                 status,
-		CSPStatus:              cspStatus,
-		ScheduledStartTime:     scheduledStartTime,
-		ScheduledEndTime:       scheduledEndTime,
-		EventReceivedTimestamp: now,
-		LastUpdatedTimestamp:   now,
-		RecommendedAction:      pb.RecommendedAction_RESTART_VM.String(),
-		Metadata:               metadata,
-		NodeName:               node.Name,
-	}
-
-	return event
 }
 
 func getSubscriptionID(cfg config.AzureConfig) (string, error) {
