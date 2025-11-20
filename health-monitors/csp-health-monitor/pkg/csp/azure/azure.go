@@ -1,3 +1,17 @@
+// Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package azure
 
 import (
@@ -51,26 +65,29 @@ func NewClient(
 	// Create an Azure client
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create Azure credential: %w", err)
+		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	// Create maintenance updates client
 	updatesClient, err := armmaintenance.NewUpdatesClient(subscriptionID, cred, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create Azure maintenance client: %w", err)
+		return nil, fmt.Errorf("failed to create Azure maintenance client: %w", err)
 	}
 
 	slog.Info("Successfully initialized Azure VM and maintenance clients", "subscriptionID", subscriptionID)
 
 	// Initialize Kubernetes client
-	var k8sClient kubernetes.Interface
-	var k8sRestConfig *rest.Config
+	var (
+		k8sClient     kubernetes.Interface
+		k8sRestConfig *rest.Config
+	)
 
 	if kubeconfigPath != "" {
 		slog.Info("Azure Client: Using kubeconfig from path", "path", kubeconfigPath)
 		k8sRestConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	} else {
 		slog.Info("Azure Client: KubeconfigPath not specified, attempting in-cluster config")
+
 		k8sRestConfig, err = rest.InClusterConfig()
 	}
 
@@ -149,6 +166,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 	if err != nil {
 		metrics.CSPAPIErrors.WithLabelValues(string(model.CSPAzure), "list_nodes_error").Inc()
 		slog.Error("Failed to list Kubernetes nodes", "error", err)
+
 		return
 	}
 
@@ -158,8 +176,10 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 	var wg sync.WaitGroup
 	for _, node := range nodeList.Items {
 		wg.Add(1)
+
 		go func(node v1.Node) {
 			defer wg.Done()
+
 			c.processNodeMaintenanceEvents(ctx, node, eventChan)
 		}(node)
 	}
@@ -171,7 +191,10 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 }
 
 // processNodeMaintenanceEvents processes maintenance events for a single node
-func (c *Client) processNodeMaintenanceEvents(ctx context.Context, node v1.Node, eventChan chan<- model.MaintenanceEvent) {
+func (c *Client) processNodeMaintenanceEvents(
+	ctx context.Context,
+	node v1.Node,
+	eventChan chan<- model.MaintenanceEvent) {
 	// Parse the Azure provider ID
 	resourceGroup, vmName, err := parseAzureProviderID(node.Spec.ProviderID)
 	if err != nil {
@@ -179,6 +202,7 @@ func (c *Client) processNodeMaintenanceEvents(ctx context.Context, node v1.Node,
 			"node", node.Name,
 			"providerID", node.Spec.ProviderID,
 			"error", err)
+
 		return
 	}
 
@@ -204,6 +228,7 @@ func (c *Client) processNodeMaintenanceEvents(ctx context.Context, node v1.Node,
 				"resourceGroup", resourceGroup,
 				"vmName", vmName,
 				"error", err)
+
 			return
 		}
 
@@ -263,6 +288,7 @@ func (c *Client) normalizeAndSendEvent(
 		slog.Error("Failed to normalize Azure maintenance event",
 			"node", node.Name,
 			"error", err)
+
 		return
 	}
 
@@ -287,7 +313,7 @@ func getSubscriptionID(cfg config.AzureConfig) (string, error) {
 
 	client := http.Client{Transport: PTransport}
 
-	req, _ := http.NewRequest("GET", "http://169.254.169.254/metadata/instance", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://169.254.169.254/metadata/instance", nil)
 	req.Header.Add("Metadata", "True")
 
 	q := req.URL.Query()
@@ -308,13 +334,15 @@ func getSubscriptionID(cfg config.AzureConfig) (string, error) {
 		} `json:"compute"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode IMDS response: %v", err)
+		return "", fmt.Errorf("failed to decode IMDS response: %w", err)
 	}
+
 	return result.Compute.SubscriptionID, nil
 }
 
 // parseAzureProviderID parses the provider ID to extract the resource group and VM name.
-// Example provider ID: azure:///subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/virtualMachines/<vm-name>
+// Example provider ID:
+// azure:///subscriptions/<sub-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/virtualMachines/<vm-name>
 func parseAzureProviderID(providerID string) (string, string, error) {
 	parts := strings.Split(providerID, "/")
 	if len(parts) < 9 {
@@ -322,10 +350,12 @@ func parseAzureProviderID(providerID string) (string, string, error) {
 	}
 
 	var resourceGroup, vmName string
+
 	for i, part := range parts {
 		if part == "resourceGroups" && i+1 < len(parts) {
 			resourceGroup = parts[i+1]
 		}
+
 		if part == "virtualMachines" && i+1 < len(parts) {
 			vmName = parts[i+1]
 		}

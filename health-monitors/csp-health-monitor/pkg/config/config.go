@@ -213,13 +213,17 @@ func validateCSPConfig(cfg *Config) error {
 
 	// Ensure only one CSP is enabled
 	count := 0
+
 	for _, csp := range []bool{cfg.GCP.Enabled, cfg.AWS.Enabled, cfg.Azure.Enabled} {
 		if csp {
 			count++
 		}
 	}
+
 	if count > 1 {
-		return fmt.Errorf("multiple CSPs enabled: only one of GCP, AWS, or Azure can be enabled at a time in the configuration")
+		return fmt.Errorf(
+			"multiple CSPs enabled: only one of GCP, AWS, or Azure can be enabled at a time in the configuration",
+		)
 	}
 
 	return nil

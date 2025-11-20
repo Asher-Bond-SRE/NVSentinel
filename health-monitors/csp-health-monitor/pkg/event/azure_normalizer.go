@@ -25,7 +25,9 @@ import (
 
 type AzureNormalizer struct{}
 
-func (n *AzureNormalizer) Normalize(rawEvent interface{}, additionalInfo ...interface{}) (*model.MaintenanceEvent, error) {
+func (n *AzureNormalizer) Normalize(
+	rawEvent interface{},
+	additionalInfo ...interface{}) (*model.MaintenanceEvent, error) {
 	// We need the normalizer interface but expect a struct
 	// from the azure sdk
 	update, ok := rawEvent.(*armmaintenance.Update)
@@ -63,12 +65,15 @@ func (n *AzureNormalizer) Normalize(rawEvent interface{}, additionalInfo ...inte
 	if update.MaintenanceScope != nil {
 		metadata["maintenanceScope"] = string(*update.MaintenanceScope)
 	}
+
 	if update.ImpactType != nil {
 		metadata["impactType"] = string(*update.ImpactType)
 	}
+
 	if update.ImpactDurationInSec != nil {
 		metadata["impactDurationInSec"] = fmt.Sprintf("%d", *update.ImpactDurationInSec)
 	}
+
 	if update.Status != nil {
 		metadata["updateStatus"] = string(*update.Status)
 	}
@@ -130,6 +135,8 @@ func mapAzureStatusToCSPStatus(status *armmaintenance.UpdateStatus) model.Provid
 		return model.CSPStatusOngoing
 	case armmaintenance.UpdateStatusCompleted:
 		return model.CSPStatusCompleted
+	case armmaintenance.UpdateStatusRetryNow, armmaintenance.UpdateStatusRetryLater:
+		return model.CSPStatusPending
 	default:
 		return model.CSPStatusUnknown
 	}
