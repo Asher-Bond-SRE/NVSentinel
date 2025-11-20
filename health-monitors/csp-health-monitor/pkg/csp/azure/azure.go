@@ -176,7 +176,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 			}
 
 			// Rebuild the resource ID needed in a couple places here
-			resourceId := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Compute/virtualMachines/%s",
+			resourceID := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Compute/virtualMachines/%s",
 				c.subscriptionID, resourceGroup, vmName)
 
 			// Query the Azure Maintenance Updates API
@@ -226,7 +226,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 							"clusterName":   c.clusterName,
 							"resourceGroup": resourceGroup,
 							"vmName":        vmName,
-							"resourceId":    resourceId,
+							"resourceID":    resourceID,
 							"update":        update,
 						}
 
