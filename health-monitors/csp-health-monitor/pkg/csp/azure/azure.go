@@ -160,93 +160,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 		wg.Add(1)
 		go func(node v1.Node) {
 			defer wg.Done()
-
-			// Parse the Azure provider ID
-			resourceGroup, vmName, err := parseAzureProviderID(node.Spec.ProviderID)
-			if err != nil {
-				slog.Warn("Failed to parse Azure provider ID",
-					"node", node.Name,
-					"providerID", node.Spec.ProviderID,
-					"error", err)
-				return
-			}
-
-			// Rebuild the resource ID needed in a couple places here
-			resourceID := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Compute/virtualMachines/%s",
-				c.subscriptionID, resourceGroup, vmName)
-
-			// Query the Azure Maintenance Updates API
-			pager := c.updatesClient.NewListPager(
-				resourceGroup,
-				"Microsoft.Compute",
-				"virtualMachines",
-				vmName,
-				nil,
-			)
-
-			for pager.More() {
-				page, err := pager.NextPage(ctx)
-				if err != nil {
-					metrics.CSPAPIErrors.WithLabelValues(string(model.CSPAzure), "updates_list_error").Inc()
-					slog.Error("Failed to get Azure maintenance updates",
-						"node", node.Name,
-						"resourceGroup", resourceGroup,
-						"vmName", vmName,
-						"error", err)
-					return
-				}
-
-				// Process each update
-				for _, update := range page.Value {
-					// These are the two fields we need to determine if a maintenance
-					// event needs to be reported
-					if update.Status == nil || update.ImpactType == nil {
-						continue
-					}
-
-					if *update.Status != armmaintenance.UpdateStatusCompleted && *update.ImpactType != armmaintenance.ImpactTypeNone {
-						metrics.CSPEventsReceived.WithLabelValues(string(model.CSPAzure)).Inc()
-
-						slog.Info("Detected Azure maintenance event",
-							"node", node.Name,
-							"resourceGroup", resourceGroup,
-							"vmName", vmName,
-							"status", *update.Status,
-							"impactType", *update.ImpactType,
-						)
-
-						// Normalize the event using the normalizer
-						nodeInfo := map[string]interface{}{
-							"nodeName":      node.Name,
-							"providerID":    node.Spec.ProviderID,
-							"clusterName":   c.clusterName,
-							"resourceGroup": resourceGroup,
-							"vmName":        vmName,
-							"resourceID":    resourceID,
-							"update":        update,
-						}
-
-						event, err := c.normalizer.Normalize(update, nodeInfo)
-						if err != nil {
-							slog.Error("Failed to normalize Azure maintenance event",
-								"node", node.Name,
-								"error", err)
-							continue
-						}
-
-						// Send the event to the channel
-						select {
-						case eventChan <- *event:
-							slog.Debug("Sent maintenance event to channel",
-								"eventID", event.EventID,
-								"node", event.NodeName)
-						case <-ctx.Done():
-							slog.Info("Context cancelled while sending event")
-							return
-						}
-					}
-				}
-			}
+			c.processNodeMaintenanceEvents(ctx, node, eventChan)
 		}(node)
 	}
 
@@ -254,6 +168,113 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 	wg.Wait()
 
 	slog.Debug("Completed Azure maintenance event poll")
+}
+
+// processNodeMaintenanceEvents processes maintenance events for a single node
+func (c *Client) processNodeMaintenanceEvents(ctx context.Context, node v1.Node, eventChan chan<- model.MaintenanceEvent) {
+	// Parse the Azure provider ID
+	resourceGroup, vmName, err := parseAzureProviderID(node.Spec.ProviderID)
+	if err != nil {
+		slog.Warn("Failed to parse Azure provider ID",
+			"node", node.Name,
+			"providerID", node.Spec.ProviderID,
+			"error", err)
+		return
+	}
+
+	// Rebuild the resource ID needed for event normalization
+	resourceID := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.Compute/virtualMachines/%s",
+		c.subscriptionID, resourceGroup, vmName)
+
+	// Query the Azure Maintenance Updates API
+	pager := c.updatesClient.NewListPager(
+		resourceGroup,
+		"Microsoft.Compute",
+		"virtualMachines",
+		vmName,
+		nil,
+	)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			metrics.CSPAPIErrors.WithLabelValues(string(model.CSPAzure), "updates_list_error").Inc()
+			slog.Error("Failed to get Azure maintenance updates",
+				"node", node.Name,
+				"resourceGroup", resourceGroup,
+				"vmName", vmName,
+				"error", err)
+			return
+		}
+
+		// Process each update in the page
+		for _, update := range page.Value {
+			if c.shouldReportUpdate(update) {
+				c.normalizeAndSendEvent(ctx, node, update, resourceGroup, vmName, resourceID, eventChan)
+			}
+		}
+	}
+}
+
+// shouldReportUpdate determines if a maintenance update should be reported
+func (c *Client) shouldReportUpdate(update *armmaintenance.Update) bool {
+	// These are the two fields we need to determine if a maintenance event needs to be reported
+	if update.Status == nil || update.ImpactType == nil {
+		return false
+	}
+
+	// Only report updates that are not completed and have an actual impact
+	return *update.Status != armmaintenance.UpdateStatusCompleted && *update.ImpactType != armmaintenance.ImpactTypeNone
+}
+
+// normalizeAndSendEvent normalizes a maintenance update and sends it to the event channel
+func (c *Client) normalizeAndSendEvent(
+	ctx context.Context,
+	node v1.Node,
+	update *armmaintenance.Update,
+	resourceGroup string,
+	vmName string,
+	resourceID string,
+	eventChan chan<- model.MaintenanceEvent,
+) {
+	metrics.CSPEventsReceived.WithLabelValues(string(model.CSPAzure)).Inc()
+
+	slog.Info("Detected Azure maintenance event",
+		"node", node.Name,
+		"resourceGroup", resourceGroup,
+		"vmName", vmName,
+		"status", *update.Status,
+		"impactType", *update.ImpactType,
+	)
+
+	// Normalize the event using the normalizer
+	nodeInfo := map[string]interface{}{
+		"nodeName":      node.Name,
+		"providerID":    node.Spec.ProviderID,
+		"clusterName":   c.clusterName,
+		"resourceGroup": resourceGroup,
+		"vmName":        vmName,
+		"resourceID":    resourceID,
+		"update":        update,
+	}
+
+	event, err := c.normalizer.Normalize(update, nodeInfo)
+	if err != nil {
+		slog.Error("Failed to normalize Azure maintenance event",
+			"node", node.Name,
+			"error", err)
+		return
+	}
+
+	// Send the event to the channel
+	select {
+	case eventChan <- *event:
+		slog.Debug("Sent maintenance event to channel",
+			"eventID", event.EventID,
+			"node", event.NodeName)
+	case <-ctx.Done():
+		slog.Info("Context cancelled while sending event")
+	}
 }
 
 func getSubscriptionID(cfg config.AzureConfig) (string, error) {
@@ -300,8 +321,6 @@ func parseAzureProviderID(providerID string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid provider ID format: %s", providerID)
 	}
 
-	// Extract resource group and VM name from the provider ID
-	// Format: azure:///subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/virtualMachines/<vm-name>
 	var resourceGroup, vmName string
 	for i, part := range parts {
 		if part == "resourceGroups" && i+1 < len(parts) {
