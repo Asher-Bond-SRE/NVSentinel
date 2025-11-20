@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/maintenance/armmaintenance"
 	"github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/config"
 	"github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/datastore"
@@ -28,15 +27,14 @@ import (
 // Client encapsulates all state required to poll Azure for
 // maintenance events and forward them to the main pipeline.
 type Client struct {
-	config                config.AzureConfig
-	VirtualMachinesClient *armcompute.VirtualMachinesClient
-	UpdatesClient         *armmaintenance.UpdatesClient
-	k8sClient             kubernetes.Interface
-	normalizer            eventpkg.Normalizer
-	clusterName           string
-	kubeconfigPath        string
-	store                 datastore.Store
-	subscriptionID        string
+	config         config.AzureConfig
+	updatesClient  *armmaintenance.UpdatesClient
+	k8sClient      kubernetes.Interface
+	normalizer     eventpkg.Normalizer
+	clusterName    string
+	kubeconfigPath string
+	store          datastore.Store
+	subscriptionID string
 }
 
 // NewClient builds and initialises a new Azure monitoring Client.
@@ -57,11 +55,6 @@ func NewClient(
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Azure credential: %w", err)
-	}
-
-	vmClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create Azure client: %w", err)
 	}
 
 	// Create maintenance updates client
@@ -104,15 +97,14 @@ func NewClient(
 	}
 
 	return &Client{
-		config:                cfg,
-		VirtualMachinesClient: vmClient,
-		UpdatesClient:         updatesClient,
-		k8sClient:             k8sClient,
-		normalizer:            normalizer,
-		clusterName:           clusterName,
-		kubeconfigPath:        kubeconfigPath,
-		store:                 store,
-		subscriptionID:        subscriptionID,
+		config:         cfg,
+		updatesClient:  updatesClient,
+		k8sClient:      k8sClient,
+		normalizer:     normalizer,
+		clusterName:    clusterName,
+		kubeconfigPath: kubeconfigPath,
+		store:          store,
+		subscriptionID: subscriptionID,
 	}, nil
 }
 
@@ -194,7 +186,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 				c.subscriptionID, resourceGroup, vmName)
 
 			// Query the Azure Maintenance Updates API
-			pager := c.UpdatesClient.NewListPager(
+			pager := c.updatesClient.NewListPager(
 				resourceGroup,
 				"Microsoft.Compute",
 				"virtualMachines",
