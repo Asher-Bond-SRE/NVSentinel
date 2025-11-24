@@ -10,7 +10,7 @@ require (
 	github.com/nvidia/nvsentinel/commons v0.0.0
 	github.com/nvidia/nvsentinel/data-models v0.0.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/common v0.67.2
+	github.com/prometheus/common v0.67.4
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
 	go.yaml.in/yaml/v2 v2.4.3
