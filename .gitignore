@@ -10,9 +10,6 @@
 ### Version Managers ###
 mise.toml
 
-### Version Managers ###
-mise.toml
-
 ### Go ###
 # Binaries for programs and plugins
 *.exe
