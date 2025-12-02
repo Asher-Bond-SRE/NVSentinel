@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -31,9 +32,12 @@ import (
 	"github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/metrics"
 	"github.com/nvidia/nvsentinel/health-monitors/csp-health-monitor/pkg/model"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/informers"
+	v1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -42,11 +46,11 @@ import (
 type Client struct {
 	config         config.AzureConfig
 	updatesClient  *armmaintenance.UpdatesClient
-	k8sClient      kubernetes.Interface
 	normalizer     eventpkg.Normalizer
 	clusterName    string
 	kubeconfigPath string
 	subscriptionID string
+	nodeInformer   v1informer.NodeInformer
 }
 
 // NewClient builds and initialises a new Azure monitoring Client.
@@ -93,6 +97,8 @@ func NewClient(
 
 	slog.Info("Azure Client: Successfully initialized Kubernetes client")
 
+	nodeInformer, _ := newNodeInformer(k8sClient)
+
 	normalizer, err := eventpkg.GetNormalizer(model.CSPAzure)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Azure normalizer: %w", err)
@@ -101,12 +107,40 @@ func NewClient(
 	return &Client{
 		config:         cfg,
 		updatesClient:  updatesClient,
-		k8sClient:      k8sClient,
 		normalizer:     normalizer,
 		clusterName:    clusterName,
 		kubeconfigPath: kubeconfigPath,
 		subscriptionID: subscriptionID,
+		nodeInformer:   nodeInformer,
 	}, nil
+}
+
+func newNodeInformer(k8sClient kubernetes.Interface) (v1informer.NodeInformer, chan struct{}) {
+	factory := informers.NewSharedInformerFactory(k8sClient, 0*time.Second)
+
+	nodeInformer := factory.Core().V1().Nodes()
+	stopCh := make(chan struct{})
+
+	_, err := nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) {},
+		DeleteFunc: func(obj interface{}) {},
+		UpdateFunc: func(oldObj, newObj interface{}) {},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to add event handler: %v", err)
+		return nil, nil
+	}
+
+	factory.Start(stopCh)
+	synced := factory.WaitForCacheSync(stopCh)
+	for v, ok := range synced {
+		if !ok {
+			fmt.Fprintf(os.Stderr, "caches failed to sync: %v", v)
+			return nil, nil
+		}
+	}
+
+	return nodeInformer, stopCh
 }
 
 func (c *Client) GetName() model.CSP {
@@ -147,7 +181,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 
 	slog.Debug("Polling Azure for VM maintenance events")
 
-	nodeList, err := c.k8sClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	nodeList, err := c.nodeInformer.Lister().List(labels.Everything())
 	if err != nil {
 		metrics.CSPAPIErrors.WithLabelValues(string(model.CSPAzure), "list_nodes_error").Inc()
 		slog.Error("Failed to list Kubernetes nodes", "error", err)
@@ -155,13 +189,13 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 		return
 	}
 
-	slog.Debug("Found nodes to check for maintenance events", "count", len(nodeList.Items))
+	slog.Debug("Found nodes to check for maintenance events", "count", len(nodeList))
 
 	var wg sync.WaitGroup
-	for _, node := range nodeList.Items {
+	for _, node := range nodeList {
 		wg.Add(1)
 
-		go func(node v1.Node) {
+		go func(node *v1.Node) {
 			defer wg.Done()
 
 			c.processNodeMaintenanceEvents(ctx, node, eventChan)
@@ -176,7 +210,7 @@ func (c *Client) pollForMaintenanceEvents(ctx context.Context, eventChan chan<- 
 // processNodeMaintenanceEvents processes maintenance events for a single node
 func (c *Client) processNodeMaintenanceEvents(
 	ctx context.Context,
-	node v1.Node,
+	node *v1.Node,
 	eventChan chan<- model.MaintenanceEvent) {
 	resourceGroup, vmName, err := parseAzureProviderID(node.Spec.ProviderID)
 	if err != nil {
@@ -235,7 +269,7 @@ func (c *Client) shouldReportUpdate(update *armmaintenance.Update) bool {
 // normalizeAndSendEvent normalizes a maintenance update and sends it to the event channel
 func (c *Client) normalizeAndSendEvent(
 	ctx context.Context,
-	node v1.Node,
+	node *v1.Node,
 	update *armmaintenance.Update,
 	resourceGroup string,
 	vmName string,

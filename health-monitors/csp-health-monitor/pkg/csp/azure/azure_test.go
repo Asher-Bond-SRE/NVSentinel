@@ -16,7 +16,9 @@ package azure
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -32,8 +34,38 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	fakek8s "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
+
+var (
+	testK8sClient kubernetes.Interface
+)
+
+func TestMain(m *testing.M) {
+	testEnv := &envtest.Environment{
+		ErrorIfCRDPathMissing: false,
+	}
+
+	testK8sConfig, err := testEnv.Start()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to start test environment: %v", err))
+	}
+
+	testK8sClient, err = kubernetes.NewForConfig(testK8sConfig)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Kubernetes client: %v", err))
+	}
+
+	code := m.Run()
+
+	err = testEnv.Stop()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to stop test environment: %v", err))
+	}
+
+	os.Exit(code)
+}
 
 // TestPollForMaintenanceEvents_NoMaintenanceEvents tests the basic happy path
 // where we have one node but it returns no maintenance updates
@@ -46,7 +78,14 @@ func TestPollForMaintenanceEvents_NoMaintenanceEvents(t *testing.T) {
 			ProviderID: "azure:///subscriptions/test-sub-id/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/test-vm",
 		},
 	}
-	fakeK8sClient := fakek8s.NewSimpleClientset(node)
+
+	_, err := testK8sClient.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{})
+	require.NoError(t, err, "Failed to create test node")
+
+	defer func() {
+		err := testK8sClient.CoreV1().Nodes().Delete(context.Background(), node.Name, metav1.DeleteOptions{})
+		require.NoError(t, err, "Failed to delete test node")
+	}()
 
 	// Create a fake Azure Updates server that returns no updates
 	fakeUpdatesServer := fakearm.UpdatesServer{
@@ -69,15 +108,20 @@ func TestPollForMaintenanceEvents_NoMaintenanceEvents(t *testing.T) {
 	updatesClient, err := armmaintenance.NewUpdatesClient("test-sub-id", &fake.TokenCredential{}, updatesClientOptions)
 	require.NoError(t, err, "Failed to create updates client")
 
+	nodeInformer, stopCh := newNodeInformer(testK8sClient)
+	t.Cleanup(func() {
+		close(stopCh)
+	})
+
 	client := &Client{
 		config: config.AzureConfig{
 			PollingIntervalSeconds: 60,
 		},
 		updatesClient:  updatesClient,
-		k8sClient:      fakeK8sClient,
 		normalizer:     &eventpkg.AzureNormalizer{},
 		clusterName:    "test-cluster",
 		subscriptionID: "test-sub-id",
+		nodeInformer:   nodeInformer,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -107,7 +151,14 @@ func TestPollForMaintenanceEvents_OneMaintenanceEvent(t *testing.T) {
 			ProviderID: "azure:///subscriptions/test-sub-id/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/test-vm",
 		},
 	}
-	fakeK8sClient := fakek8s.NewSimpleClientset(node)
+
+	_, err := testK8sClient.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{})
+	require.NoError(t, err, "Failed to create test node")
+
+	defer func() {
+		err := testK8sClient.CoreV1().Nodes().Delete(context.Background(), node.Name, metav1.DeleteOptions{})
+		require.NoError(t, err, "Failed to delete test node")
+	}()
 
 	// Create a pending maintenance update that should trigger an event
 	pendingStatus := armmaintenance.UpdateStatusPending
@@ -141,15 +192,20 @@ func TestPollForMaintenanceEvents_OneMaintenanceEvent(t *testing.T) {
 	updatesClient, err := armmaintenance.NewUpdatesClient("test-sub-id", &fake.TokenCredential{}, updatesClientOptions)
 	require.NoError(t, err, "Failed to create updates client")
 
+	nodeInformer, stopCh := newNodeInformer(testK8sClient)
+	t.Cleanup(func() {
+		close(stopCh)
+	})
+
 	client := &Client{
 		config: config.AzureConfig{
 			PollingIntervalSeconds: 60,
 		},
 		updatesClient:  updatesClient,
-		k8sClient:      fakeK8sClient,
 		normalizer:     &eventpkg.AzureNormalizer{},
 		clusterName:    "test-cluster",
 		subscriptionID: "test-sub-id",
+		nodeInformer:   nodeInformer,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
