@@ -1,6 +1,6 @@
 module github.com/nvidia/nvsentinel/platform-connectors
 
-go 1.25
+go 1.25.0
 
 toolchain go1.25.3
 
@@ -16,7 +16,7 @@ require (
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 	k8s.io/api v0.34.3
-	k8s.io/apimachinery v0.34.3
+	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.34.3
 	sigs.k8s.io/controller-runtime v0.22.4
 )
