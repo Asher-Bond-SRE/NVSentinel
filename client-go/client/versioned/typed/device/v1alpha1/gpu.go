@@ -56,9 +56,20 @@ func newGPUs(c *DeviceV1alpha1Client) *gpus {
 	}
 }
 
+func (c *gpus) getNamespace() string {
+	if c == nil {
+		return ""
+	}
+	return ""
+}
+
 func (c *gpus) Get(ctx context.Context, name string, opts v1.GetOptions) (*devicev1alpha1.GPU, error) {
 	resp, err := c.client.GetGpu(ctx, &pb.GetGpuRequest{
 		Name: name,
+		Opts: &pb.GetOptions{
+			ResourceVersion: opts.ResourceVersion,
+			Namespace:       c.getNamespace(),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -67,6 +78,7 @@ func (c *gpus) Get(ctx context.Context, name string, opts v1.GetOptions) (*devic
 	obj := devicev1alpha1.FromProto(resp.GetGpu())
 	c.logger.V(6).Info("Fetched GPU",
 		"name", name,
+		"namespace", c.getNamespace(),
 		"resource-version", obj.GetResourceVersion(),
 	)
 
@@ -75,7 +87,10 @@ func (c *gpus) Get(ctx context.Context, name string, opts v1.GetOptions) (*devic
 
 func (c *gpus) List(ctx context.Context, opts v1.ListOptions) (*devicev1alpha1.GPUList, error) {
 	resp, err := c.client.ListGpus(ctx, &pb.ListGpusRequest{
-		ResourceVersion: opts.ResourceVersion,
+		Opts: &pb.ListOptions{
+			ResourceVersion: opts.ResourceVersion,
+			Namespace:       c.getNamespace(),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -83,6 +98,7 @@ func (c *gpus) List(ctx context.Context, opts v1.ListOptions) (*devicev1alpha1.G
 
 	list := devicev1alpha1.FromProtoList(resp.GetGpuList())
 	c.logger.V(5).Info("Listed GPUs",
+		"namespace", c.getNamespace(),
 		"count", len(list.Items),
 		"resource-version", list.GetResourceVersion(),
 	)
@@ -93,12 +109,16 @@ func (c *gpus) List(ctx context.Context, opts v1.ListOptions) (*devicev1alpha1.G
 func (c *gpus) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	c.logger.V(4).Info("Opening watch stream",
 		"resource", "gpus",
+		"namespace", c.getNamespace(),
 		"resource-version", opts.ResourceVersion,
 	)
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := c.client.WatchGpus(ctx, &pb.WatchGpusRequest{
-		ResourceVersion: opts.ResourceVersion,
+		Opts: &pb.ListOptions{
+			ResourceVersion: opts.ResourceVersion,
+			Namespace:       c.getNamespace(),
+		},
 	})
 	if err != nil {
 		cancel()

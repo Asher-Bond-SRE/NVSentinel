@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"github.com/nvidia/nvsentinel/code-generator/cmd/client-gen/args"
+	"github.com/nvidia/nvsentinel/code-generator/cmd/client-gen/generators/fake"
 	"github.com/nvidia/nvsentinel/code-generator/cmd/client-gen/generators/scheme"
 	"github.com/nvidia/nvsentinel/code-generator/cmd/client-gen/generators/util"
 	clientgentypes "github.com/nvidia/nvsentinel/code-generator/cmd/client-gen/types"
@@ -135,7 +136,7 @@ func (n *ExceptionNamer) Name(t *types.Type) string {
 func DefaultNameSystem() string {
 	return "public"
 }
-func targetForGroup(gv clientgentypes.GroupVersion, typeList []*types.Type, clientsetDir, clientsetPkg string, groupPkgName string, groupGoName string, apiPath string, inputPkg string, applyBuilderPkg string, boilerplate []byte, protoPkg clientgentypes.ProtobufPackage) generator.Target {
+func targetForGroup(gv clientgentypes.GroupVersion, typeList []*types.Type, clientsetDir, clientsetPkg string, groupPkgName string, groupGoName string, apiPath string, inputPkg string, boilerplate []byte, protoPkg clientgentypes.ProtobufPackage) generator.Target {
 
 	subdir := []string{"typed", strings.ToLower(groupPkgName), strings.ToLower(gv.Version.NonEmpty())}
 	gvDir := filepath.Join(clientsetDir, filepath.Join(subdir...))
@@ -161,16 +162,14 @@ func targetForGroup(gv clientgentypes.GroupVersion, typeList []*types.Type, clie
 					GoGenerator: generator.GoGenerator{
 						OutputFilename: strings.ToLower(c.Namers["private"].Name(t)) + ".go",
 					},
-					outputPackage:             gvPkg,
-					inputPackage:              inputPkg,
-					clientsetPackage:          clientsetPkg,
-					applyConfigurationPackage: applyBuilderPkg,
-					group:                     gv.Group.NonEmpty(),
-					version:                   gv.Version.String(),
-					groupGoName:               groupGoName,
-					typeToMatch:               t,
-					imports:                   generator.NewImportTrackerForPackage(gvPkg),
-					protoPackage:              protoPkg,
+					outputPackage: gvPkg,
+					inputPackage:  inputPkg,
+					group:         gv.Group.NonEmpty(),
+					version:       gv.Version.String(),
+					groupGoName:   groupGoName,
+					typeToMatch:   t,
+					imports:       generator.NewImportTrackerForPackage(gvPkg),
+					protoPackage:  protoPkg,
 				})
 			}
 
@@ -304,7 +303,7 @@ func applyGroupOverrides(universe types.Universe, args *args.Args) error {
 	// Modify args.Groups based on the groupName overrides.
 	newGroups := make([]clientgentypes.GroupVersions, 0, len(args.Groups))
 	for _, gvs := range args.Groups {
-		if len(args.Groups) == 0 {
+		if len(gvs.Versions) == 0 {
 			return fmt.Errorf("group %q has no versions", gvs.Group.String())
 		}
 		gv := clientgentypes.GroupVersion{
@@ -426,6 +425,10 @@ func GetTargets(context *generator.Context, args *args.Args) []generator.Target 
 		targetForClientset(args, clientsetDir, clientsetPkg, groupGoNames, boilerplate))
 	targetList = append(targetList,
 		targetForScheme(args, clientsetDir, clientsetPkg, groupGoNames, boilerplate))
+	if args.FakeClient {
+		targetList = append(targetList,
+			fake.TargetForClientset(args, clientsetDir, clientsetPkg, groupGoNames, boilerplate))
+	}
 
 	// If --clientset-only=true, we don't regenerate the individual typed clients.
 	if args.ClientsetOnly {
@@ -444,7 +447,11 @@ func GetTargets(context *generator.Context, args *args.Args) []generator.Target 
 				targetForGroup(
 					gv, orderer.OrderTypes(types), clientsetDir, clientsetPkg,
 					group.PackageName, groupGoNames[gv], args.ClientsetAPIPath,
-					inputPath, args.ApplyConfigurationPackage, boilerplate, protoPackage))
+					inputPath, boilerplate, protoPackage))
+			if args.FakeClient {
+				targetList = append(targetList,
+					fake.TargetForGroup(gv, orderer.OrderTypes(types), clientsetDir, clientsetPkg, group.PackageName, groupGoNames[gv], inputPath, boilerplate))
+			}
 		}
 	}
 

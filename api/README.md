@@ -1,18 +1,26 @@
 # API Definitions
-This module contains the canonical API definitions, serving as the source of truth for both Go SDKs and gRPC wire formats.
+
+This module contains the canonical API definitions for the **NVIDIA Device API**. It serves as the single source of truth for resource schemas, gRPC wire formats, and Kubernetes-native Go types.
 
 ## Structure
-* **`device/`**: Contains the **Kubernetes API type definitions** (e.g., `GPU` struct with `Spec` and `Status`).
-* **`proto/`**: Contains the **Protobuf Message and gRPC Service Definitions**.
-    * *Note:* The `ObjectMeta` and `ListMeta` messages are subsets of `k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta` and `k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta` respectively.
-* **`gen/go/`**: Contains the **Generated Go Protobuf API and gRPC Service Bindings** (e.g., `gpu.pb.go`, `gpu_grpc.pb.go`) compiled from the protobuf definitions in `proto/`. **Do not edit these files manually.**
+
+* **`device/`**: Contains the **Kubernetes Resource Model (KRM)** definitions. These types implement the `runtime.Object` interface.
+* **`proto/`**: Contains the **Language-Agnostic Definitions**. Protobuf messages and gRPC service definitions that define the node-local communication contract.
+* **`gen/go/`**: Contains the **Bindings**. The output of the `protoc` compiler (`.pb.go` and `_grpc.pb.go`).
 
 ## Code Generation
-To (re)generate Go helper functions (e.g., `zz_generated.deepcopy.go`) and Go protobuf API and gRPC service bindings, run:
+
+This module relies on three distinct generation phases to maintain type safety:
+1. **Protobuf**: Compiles `.proto` files into Go structs.
+2. **DeepCopy**: Generates `zz_generated.deepcopy.go` to support Kubernetes object manipulation.
+3. **Conversion**: Generates `zz_generated.goverter.go` to map between Protobuf messages and KRM Go types (using Goverter).
+
+To run the full pipeline:
 
 ```bash
 make code-gen
 ```
 
 ## Development
-See [DEVELOPMENT.md](DEVELOPMENT.md) for details on modifying the API definitions.
+
+Refer to [DEVELOPMENT.md](DEVELOPMENT.md) for instructions on adding new fields or resources to the API.

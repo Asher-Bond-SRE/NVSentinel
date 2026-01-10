@@ -1,31 +1,33 @@
-# NVIDIA Device API Go Client: Examples
-This directory contains a suite of examples demonstrating how to use `nvidia/client-go` to interact with the node-local NVIDIA Device API using Kubernetes-idiomatic patterns.
+# NVIDIA Device API Go Client Examples
 
-## Usage Examples
+This directory contains examples demonstrating various use cases and functionality of the NVIDIA Device API Go client.
 
-| Directory | Focus | Complexity | Description |
-| :--- | :--- | :--- | :--- |
-| **[basic-client](./basic-client)** | **Reference Implementation** | Basic | Foundational SDK usage: initializing the clientset and performing standard operations. |
-| **[streaming-daemon](./streaming-daemon)** | **Event-Driven Agent** | Intermediate | Demonstrates long-running processes using gRPC interceptors and asynchronous `Watch` streams. |
-| **[controller-shim](./controller-shim)** | **Operator Integration** | Advanced | **Informer Injection**: Shows how to drive a `controller-runtime` reconciler using node-local cached data. |
+## Integration Patterns
+
+| Example | Focus | Use Case |
+| :--- | :--- | :--- |
+| **[Basic Client](./client)** | **Point-in-Time Discovery** | CLI tools and scripts |
+| **[Watch Monitor](./watch)** | **Asynchronous Operations** | Real-time monitoring and telemetry |
+| **[Controller](./controller)** | **State Enforcement** | Kubernetes Operators and automation |
+| **[Fake Client](./fake-client)** | **Unit Testing** | Mocking and event-driven validation |
 
 ## Prerequisites
-All examples are designed to run locally on your development machine using the included **Fake Server**.
 
-### 1. Start the Fake Server
-The server simulates a node with 8 GPUs and generates random status change events to test `Watch` and Informer capabilities.
+All examples are designed to run locally using the [Fake Device API Server](./fake-server). It maintains an in-memory inventory of 8 GPUs and generates random status events (e.g., `Ready` toggles).
 
 ```bash
+# Start the simulated device api server
 sudo go run ./fake-server/main.go
 ```
-**Note:** `sudo` is required because the default socket path is in `/var/run/`. To run without root privileges, override the socket path to a user-writable location with the `NVIDIA_DEVICE_API_TARGET` environment variable.
 
-## Run an Example
-Once the server is running, navigate to any example directory and run it:
+## Running Examples
+
+With the server running in a dedicated terminal, navigate to any example and run it:
 
 ```bash
-# Running the reference implementation
-cd examples/basic-client
+# Running the basic client example
+cd client/
 sudo go run main.go
 ```
-**Note:** `sudo` is required because the default socket path is in `/var/run/`. If you started the server with a non-default target, override the socket path with the `NVIDIA_DEVICE_API_TARGET` environment variable to the same URI here.
+> [!Note]
+> `sudo` is required to access the default Unix domain socket (UDS) path in `/var/run/`. To run without root, override the socket path using the `NVIDIA_DEVICE_API_TARGET` environment variable.

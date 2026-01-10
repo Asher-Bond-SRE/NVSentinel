@@ -1,13 +1,16 @@
 # NVIDIA Device API Go Client: Development Guide
-This document outlines the workflow for developing and maintaining the `nvidia/client-go` SDK. Because this library provides Kubernetes-native interfaces, it relies heavily on **code generation**. Most of the code in this directory should not be edited manually.
+
+This document outlines the workflow for developing and maintaining the NVIDIA Device API Go Client. Because this library provides Kubernetes-native interfaces, it relies heavily on **code generation**. Most of the code in this directory should not be edited manually.
 
 ## Prerequisites
+
 * **Go**: Must match the version specified in `go.mod`.
 * **Make**: Standard build tool.
 
 ## Structure
-- `client/`: [Generated] The Clientset. **Do not edit manually.**
-- `listers/`: [Generated] Type-safe listers. **Do not edit manually.**
+
+- `client/`: [Generated] The versioned Clientset. **Do not edit manually.**
+- `listers/`: [Generated] Type-safe listers for cached lookups. **Do not edit manually.**
 - `informers/`: [Generated] Shared Index Informers. **Do not edit manually.**
 - `nvgrpc/`: [Manual] The gRPC transport layer, interceptors, and connection management logic.
 - `version/`: [Manual] Version injection functionality via `ldflags`.
@@ -15,6 +18,7 @@ This document outlines the workflow for developing and maintaining the `nvidia/c
 ## Workflow
 
 ### 1. Code Generation
+
 To (re)generate the client, run:
 
 ```bash
@@ -25,10 +29,11 @@ make code-gen
 > [!TIP]
 > **Did you modify the API?**
 >
-> If you have changed the types in the `../api` module (Proto or Go), you must run `make code-gen` **inside that directory first**.
+> If you have changed the types in the `../api` module (Proto or Go), you must run `make code-gen` **inside the API directory first**.
 > This ensures that the low-level bindings (Protobufs, DeepCopy, Conversions) are up-to-date before this client attempts to generate the high-level interfaces.
 
 ### 2. Building & Testing
+
 Verify that the generated code compiles and passes unit tests.
 
 ```bash
@@ -39,15 +44,9 @@ make build
 make test
 ```
 
-### 3. Full Cycle
-To run the complete pipeline (Generation → Test → Build) in one go:
-
-```bash
-make all
-```
-
 ## Code Generation Pipeline
-This SDK is automatically generated from the Protocol Buffer definitions and Go types found in the `../api` module. We use standard Kubernetes code generators, including a customized build of `client-gen` to handle gRPC transport natively.
+
+This SDK is automatically generated from the Protocol Buffer definitions and Go types found in the `../api` module. We use standard Kubernetes code generators, including a customized build of `client-gen` to support gRPC transport.
 
 ```mermaid
 graph TD
@@ -64,20 +63,26 @@ graph TD
 ```
 
 ### Components
-1. `client-gen` (**Custom**): Generates the **Clientset**. This provides access to the API Resources (e.g., `DeviceV1alpha1().GPUs()`) and maps standard Kubernetes verbs (Get, List, Watch) to the node-local gRPC transport.
-2. `lister-gen`: Generates **Listers**. These provide a read-only, cached view of resources, allowing for fast lookups without making network calls.
-3. `informer-gen`: Generates **Informers**. These coordinate the Client and Listers to watch for updates and sync the local cache.
+
+- `client-gen` (**Customized**): Generates the **Clientset**. Our version is modified to map standard Kubernetes verbs (`Get`, `List`, `Watch`, etc.) to the node-local gRPC transport instead of REST.
+- `lister-gen`: Generates **Listers**. These provide a read-only, cached view of resources, allowing for fast lookups without making network calls.
+- `informer-gen`: Generates **Informers**. These coordinate the Client and Listers to watch for updates and sync the local cache.
 
 ### Modifying Generated Code
+
 > [!WARNING]
 > **Do not edit generated files directly.**
 >
-> Files in `client/`, `listers/`, and `informers/` are overwritten every time you run `make code-gen`.
-> To change the client behavior, you must modify the generator source code in `../code-generator/cmd/client-gen` or the API definitions in the `../api` module.
-
+> Files in `client/`, `listers/`, and `informers/` contain a `DO NOT EDIT` header and are overwritten every time you run `make code-gen`.
+>
+> To change behavior:
+>  - **API Definitions**: Modify the Proto or Go types in `../api`.
+>  - **Client Logic**: Modify the templates in `../code-generator/cmd/client-gen`.
+>  - **Transport & Connection**: Modify the gRPC logic in `nvgrpc`.
 
 ## Housekeeping
-If you need to reset your environment:
+
+If your generated files are out of sync or contain stale data:
 
 ```bash
 # Removes generated code (client, listers, informers)

@@ -25,6 +25,12 @@ set -o pipefail
 
 KUBE_CODEGEN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
+function kube::codegen::internal::get_goversion() {
+    version=$(grep '^go ' "${KUBE_CODEGEN_ROOT}/go.mod" | awk '{print $2}')
+    version=${version:-1.25}
+    echo "$version"
+}
+
 function kube::codegen::internal::get_version() {
   local key="$1"
   local versions_file="${KUBE_CODEGEN_ROOT}/../.versions.yaml"
@@ -300,9 +306,12 @@ function kube::codegen::gen_helpers() {
         tmp_dir=$(mktemp -d)
         trap 'rm -rf -- "$tmp_dir"' EXIT
 
+        local goversion
+        goversion=$(kube::codegen::internal::get_goversion)
+
         pushd "${tmp_dir}" > /dev/null
             go mod init build-goverter > /dev/null 2>&1
-            go mod edit -go=1.25 > /dev/null 2>&1
+            go mod edit -go="${goversion}" > /dev/null 2>&1
             export GOTOOLCHAIN=auto
             go get "github.com/jmattheis/goverter${GOVERTER_VERSION_SPEC}" > /dev/null 2>&1
             go build -o "${GOBIN}/goverter" "github.com/jmattheis/goverter/cmd/goverter" > /dev/null
@@ -644,12 +653,10 @@ function kube::codegen::gen_client() {
         leaf="$(basename "${dir}")"
         if grep -E -q '^v[0-9]+((alpha|beta)[0-9]+)?$' <<< "${leaf}"; then
             input_pkgs+=("${pkg}")
-            echo "input_pkgs=${input_pkgs}"
 
             dir2="$(dirname "${dir}")"
             leaf2="$(basename "${dir2}")"
             group_versions+=("${leaf2}/${leaf}")
-            echo "group_versions=${group_versions}"
         fi
     done < <(
         ( kube::codegen::internal::grep -l --null \

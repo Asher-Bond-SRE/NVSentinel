@@ -39,7 +39,7 @@ const (
 // ObjectMeta is a subset of k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta.
 type ObjectMeta struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// name is the unique logical identifier of the resource.
+	// name is the unique logical identifier of the resource. Must be unique within a namespace.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// resource_version represents the internal version of this object.
 	//
@@ -48,8 +48,13 @@ type ObjectMeta struct {
 	// Read-only.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
 	ResourceVersion string `protobuf:"bytes,2,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// namespace defines the space within which each name must be unique. An empty namespace is
+	// equivalent to the "default" namespace, but "default" is the canonical reprsentation.
+	// Not all objects are required to be scoped to a namespace - the value of this field for
+	// those objects will be empty.
+	Namespace     string `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ObjectMeta) Reset() {
@@ -92,6 +97,13 @@ func (x *ObjectMeta) GetName() string {
 func (x *ObjectMeta) GetResourceVersion() string {
 	if x != nil {
 		return x.ResourceVersion
+	}
+	return ""
+}
+
+func (x *ObjectMeta) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
 	}
 	return ""
 }
@@ -148,6 +160,126 @@ func (x *ListMeta) GetResourceVersion() string {
 	return ""
 }
 
+// GetOptions is the standard query options to the standard gRPC get call.
+type GetOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// resource_version sets a constraint on what resource versions a request may be served from.
+	//
+	// Optional. Defaults to unset.
+	ResourceVersion string `protobuf:"bytes,1,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	// namespace sets a constraint on what namespaces a request may be served from.
+	// An empty namespace is treated as a request for all namespaces.
+	//
+	// Optional. Defaults to unset.
+	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOptions) Reset() {
+	*x = GetOptions{}
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOptions) ProtoMessage() {}
+
+func (x *GetOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOptions.ProtoReflect.Descriptor instead.
+func (*GetOptions) Descriptor() ([]byte, []int) {
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetOptions) GetResourceVersion() string {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return ""
+}
+
+func (x *GetOptions) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+// ListOptions is the query options to a standard gRPC list call. It is a subset of k8s.io/apimachinery/pkg/apis/meta/v1.ListOptions.
+type ListOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// resource_version sets a constraint on what resource versions a request may be served from.
+	//
+	// Optional. Defaults to unset.
+	ResourceVersion string `protobuf:"bytes,1,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	// namespace sets a constraint on what namespaces a request may be served from.
+	// An empty namespace is treated as a request for all namespaces.
+	//
+	// Optional. Defaults to unset.
+	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListOptions) Reset() {
+	*x = ListOptions{}
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListOptions) ProtoMessage() {}
+
+func (x *ListOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListOptions.ProtoReflect.Descriptor instead.
+func (*ListOptions) Descriptor() ([]byte, []int) {
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ListOptions) GetResourceVersion() string {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return ""
+}
+
+func (x *ListOptions) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
 // Gpu represents a single GPU resource.
 //
 // Its structure follows the Kubernetes Resource Model pattern (Spec/Status).
@@ -170,7 +302,7 @@ type Gpu struct {
 
 func (x *Gpu) Reset() {
 	*x = Gpu{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[2]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +314,7 @@ func (x *Gpu) String() string {
 func (*Gpu) ProtoMessage() {}
 
 func (x *Gpu) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[2]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +327,7 @@ func (x *Gpu) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gpu.ProtoReflect.Descriptor instead.
 func (*Gpu) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{2}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Gpu) GetMetadata() *ObjectMeta {
@@ -231,7 +363,7 @@ type GpuList struct {
 
 func (x *GpuList) Reset() {
 	*x = GpuList{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[3]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -243,7 +375,7 @@ func (x *GpuList) String() string {
 func (*GpuList) ProtoMessage() {}
 
 func (x *GpuList) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[3]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,7 +388,7 @@ func (x *GpuList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpuList.ProtoReflect.Descriptor instead.
 func (*GpuList) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{3}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GpuList) GetMetadata() *ListMeta {
@@ -286,7 +418,7 @@ type GpuSpec struct {
 
 func (x *GpuSpec) Reset() {
 	*x = GpuSpec{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[4]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -298,7 +430,7 @@ func (x *GpuSpec) String() string {
 func (*GpuSpec) ProtoMessage() {}
 
 func (x *GpuSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[4]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -311,7 +443,7 @@ func (x *GpuSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpuSpec.ProtoReflect.Descriptor instead.
 func (*GpuSpec) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{4}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GpuSpec) GetUuid() string {
@@ -334,7 +466,7 @@ type GpuStatus struct {
 
 func (x *GpuStatus) Reset() {
 	*x = GpuStatus{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[5]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -346,7 +478,7 @@ func (x *GpuStatus) String() string {
 func (*GpuStatus) ProtoMessage() {}
 
 func (x *GpuStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[5]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -359,7 +491,7 @@ func (x *GpuStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpuStatus.ProtoReflect.Descriptor instead.
 func (*GpuStatus) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{5}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GpuStatus) GetConditions() []*Condition {
@@ -399,7 +531,7 @@ type Condition struct {
 
 func (x *Condition) Reset() {
 	*x = Condition{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[6]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -411,7 +543,7 @@ func (x *Condition) String() string {
 func (*Condition) ProtoMessage() {}
 
 func (x *Condition) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[6]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,7 +556,7 @@ func (x *Condition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Condition.ProtoReflect.Descriptor instead.
 func (*Condition) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{6}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Condition) GetType() string {
@@ -466,14 +598,16 @@ func (x *Condition) GetMessage() string {
 type GetGpuRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The unique resource name of the GPU to retrieve.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// opts contains the standard query and scoping options for the request.
+	Opts          *GetOptions `protobuf:"bytes,2,opt,name=opts,proto3" json:"opts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetGpuRequest) Reset() {
 	*x = GetGpuRequest{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[7]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -485,7 +619,7 @@ func (x *GetGpuRequest) String() string {
 func (*GetGpuRequest) ProtoMessage() {}
 
 func (x *GetGpuRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[7]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -498,7 +632,7 @@ func (x *GetGpuRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGpuRequest.ProtoReflect.Descriptor instead.
 func (*GetGpuRequest) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{7}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetGpuRequest) GetName() string {
@@ -506,6 +640,13 @@ func (x *GetGpuRequest) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *GetGpuRequest) GetOpts() *GetOptions {
+	if x != nil {
+		return x.Opts
+	}
+	return nil
 }
 
 // GetGpuResponse contains the requested GPU resource.
@@ -519,7 +660,7 @@ type GetGpuResponse struct {
 
 func (x *GetGpuResponse) Reset() {
 	*x = GetGpuResponse{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[8]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -531,7 +672,7 @@ func (x *GetGpuResponse) String() string {
 func (*GetGpuResponse) ProtoMessage() {}
 
 func (x *GetGpuResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[8]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -544,7 +685,7 @@ func (x *GetGpuResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGpuResponse.ProtoReflect.Descriptor instead.
 func (*GetGpuResponse) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{8}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetGpuResponse) GetGpu() *Gpu {
@@ -557,15 +698,15 @@ func (x *GetGpuResponse) GetGpu() *Gpu {
 // ListGpusRequest specifies the criteria for listing GPU resources.
 type ListGpusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// resource_version allows the client to list resources at a specific version.
-	ResourceVersion string `protobuf:"bytes,1,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// opts contains the standard query and scoping options for the list.
+	Opts          *ListOptions `protobuf:"bytes,1,opt,name=opts,proto3" json:"opts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListGpusRequest) Reset() {
 	*x = ListGpusRequest{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[9]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -577,7 +718,7 @@ func (x *ListGpusRequest) String() string {
 func (*ListGpusRequest) ProtoMessage() {}
 
 func (x *ListGpusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[9]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,14 +731,14 @@ func (x *ListGpusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGpusRequest.ProtoReflect.Descriptor instead.
 func (*ListGpusRequest) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{9}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ListGpusRequest) GetResourceVersion() string {
+func (x *ListGpusRequest) GetOpts() *ListOptions {
 	if x != nil {
-		return x.ResourceVersion
+		return x.Opts
 	}
-	return ""
+	return nil
 }
 
 // ListGpusResponse contains the list of GPU resources.
@@ -611,7 +752,7 @@ type ListGpusResponse struct {
 
 func (x *ListGpusResponse) Reset() {
 	*x = ListGpusResponse{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[10]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -623,7 +764,7 @@ func (x *ListGpusResponse) String() string {
 func (*ListGpusResponse) ProtoMessage() {}
 
 func (x *ListGpusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[10]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -636,7 +777,7 @@ func (x *ListGpusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGpusResponse.ProtoReflect.Descriptor instead.
 func (*ListGpusResponse) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{10}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListGpusResponse) GetGpuList() *GpuList {
@@ -649,15 +790,15 @@ func (x *ListGpusResponse) GetGpuList() *GpuList {
 // WatchGpusRequest specifies the parameters for the watch stream.
 type WatchGpusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// resource_version allows the client to start watching at a specific version.
-	ResourceVersion string `protobuf:"bytes,1,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// opts contains the standard query and scoping options for the watch.
+	Opts          *ListOptions `protobuf:"bytes,1,opt,name=opts,proto3" json:"opts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WatchGpusRequest) Reset() {
 	*x = WatchGpusRequest{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[11]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -669,7 +810,7 @@ func (x *WatchGpusRequest) String() string {
 func (*WatchGpusRequest) ProtoMessage() {}
 
 func (x *WatchGpusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[11]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -682,14 +823,14 @@ func (x *WatchGpusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchGpusRequest.ProtoReflect.Descriptor instead.
 func (*WatchGpusRequest) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{11}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *WatchGpusRequest) GetResourceVersion() string {
+func (x *WatchGpusRequest) GetOpts() *ListOptions {
 	if x != nil {
-		return x.ResourceVersion
+		return x.Opts
 	}
-	return ""
+	return nil
 }
 
 // WatchGpusResponse describes a change event for a GPU resource.
@@ -714,7 +855,7 @@ type WatchGpusResponse struct {
 
 func (x *WatchGpusResponse) Reset() {
 	*x = WatchGpusResponse{}
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[12]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -726,7 +867,7 @@ func (x *WatchGpusResponse) String() string {
 func (*WatchGpusResponse) ProtoMessage() {}
 
 func (x *WatchGpusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_device_v1alpha1_gpu_proto_msgTypes[12]
+	mi := &file_device_v1alpha1_gpu_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -739,7 +880,7 @@ func (x *WatchGpusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchGpusResponse.ProtoReflect.Descriptor instead.
 func (*WatchGpusResponse) Descriptor() ([]byte, []int) {
-	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{12}
+	return file_device_v1alpha1_gpu_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WatchGpusResponse) GetType() string {
@@ -760,13 +901,21 @@ var File_device_v1alpha1_gpu_proto protoreflect.FileDescriptor
 
 const file_device_v1alpha1_gpu_proto_rawDesc = "" +
 	"\n" +
-	"\x19device/v1alpha1/gpu.proto\x12\x1anvidia.nvsentinel.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"K\n" +
+	"\x19device/v1alpha1/gpu.proto\x12\x1anvidia.nvsentinel.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"i\n" +
 	"\n" +
 	"ObjectMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12)\n" +
-	"\x10resource_version\x18\x02 \x01(\tR\x0fresourceVersion\"5\n" +
+	"\x10resource_version\x18\x02 \x01(\tR\x0fresourceVersion\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\"5\n" +
 	"\bListMeta\x12)\n" +
-	"\x10resource_version\x18\x01 \x01(\tR\x0fresourceVersion\"\xc1\x01\n" +
+	"\x10resource_version\x18\x01 \x01(\tR\x0fresourceVersion\"U\n" +
+	"\n" +
+	"GetOptions\x12)\n" +
+	"\x10resource_version\x18\x01 \x01(\tR\x0fresourceVersion\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"V\n" +
+	"\vListOptions\x12)\n" +
+	"\x10resource_version\x18\x01 \x01(\tR\x0fresourceVersion\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\xc1\x01\n" +
 	"\x03Gpu\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.nvidia.nvsentinel.v1alpha1.ObjectMetaR\bmetadata\x127\n" +
 	"\x04spec\x18\x02 \x01(\v2#.nvidia.nvsentinel.v1alpha1.GpuSpecR\x04spec\x12=\n" +
@@ -786,17 +935,18 @@ const file_device_v1alpha1_gpu_proto_rawDesc = "" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12L\n" +
 	"\x14last_transition_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x12lastTransitionTime\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"#\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"_\n" +
 	"\rGetGpuRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"C\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12:\n" +
+	"\x04opts\x18\x02 \x01(\v2&.nvidia.nvsentinel.v1alpha1.GetOptionsR\x04opts\"C\n" +
 	"\x0eGetGpuResponse\x121\n" +
-	"\x03gpu\x18\x01 \x01(\v2\x1f.nvidia.nvsentinel.v1alpha1.GpuR\x03gpu\"<\n" +
-	"\x0fListGpusRequest\x12)\n" +
-	"\x10resource_version\x18\x01 \x01(\tR\x0fresourceVersion\"R\n" +
+	"\x03gpu\x18\x01 \x01(\v2\x1f.nvidia.nvsentinel.v1alpha1.GpuR\x03gpu\"N\n" +
+	"\x0fListGpusRequest\x12;\n" +
+	"\x04opts\x18\x01 \x01(\v2'.nvidia.nvsentinel.v1alpha1.ListOptionsR\x04opts\"R\n" +
 	"\x10ListGpusResponse\x12>\n" +
-	"\bgpu_list\x18\x01 \x01(\v2#.nvidia.nvsentinel.v1alpha1.GpuListR\agpuList\"=\n" +
-	"\x10WatchGpusRequest\x12)\n" +
-	"\x10resource_version\x18\x01 \x01(\tR\x0fresourceVersion\"`\n" +
+	"\bgpu_list\x18\x01 \x01(\v2#.nvidia.nvsentinel.v1alpha1.GpuListR\agpuList\"O\n" +
+	"\x10WatchGpusRequest\x12;\n" +
+	"\x04opts\x18\x01 \x01(\v2'.nvidia.nvsentinel.v1alpha1.ListOptionsR\x04opts\"`\n" +
 	"\x11WatchGpusResponse\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x127\n" +
 	"\x06object\x18\x02 \x01(\v2\x1f.nvidia.nvsentinel.v1alpha1.GpuR\x06object2\xc0\x02\n" +
@@ -818,45 +968,50 @@ func file_device_v1alpha1_gpu_proto_rawDescGZIP() []byte {
 	return file_device_v1alpha1_gpu_proto_rawDescData
 }
 
-var file_device_v1alpha1_gpu_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_device_v1alpha1_gpu_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_device_v1alpha1_gpu_proto_goTypes = []any{
 	(*ObjectMeta)(nil),            // 0: nvidia.nvsentinel.v1alpha1.ObjectMeta
 	(*ListMeta)(nil),              // 1: nvidia.nvsentinel.v1alpha1.ListMeta
-	(*Gpu)(nil),                   // 2: nvidia.nvsentinel.v1alpha1.Gpu
-	(*GpuList)(nil),               // 3: nvidia.nvsentinel.v1alpha1.GpuList
-	(*GpuSpec)(nil),               // 4: nvidia.nvsentinel.v1alpha1.GpuSpec
-	(*GpuStatus)(nil),             // 5: nvidia.nvsentinel.v1alpha1.GpuStatus
-	(*Condition)(nil),             // 6: nvidia.nvsentinel.v1alpha1.Condition
-	(*GetGpuRequest)(nil),         // 7: nvidia.nvsentinel.v1alpha1.GetGpuRequest
-	(*GetGpuResponse)(nil),        // 8: nvidia.nvsentinel.v1alpha1.GetGpuResponse
-	(*ListGpusRequest)(nil),       // 9: nvidia.nvsentinel.v1alpha1.ListGpusRequest
-	(*ListGpusResponse)(nil),      // 10: nvidia.nvsentinel.v1alpha1.ListGpusResponse
-	(*WatchGpusRequest)(nil),      // 11: nvidia.nvsentinel.v1alpha1.WatchGpusRequest
-	(*WatchGpusResponse)(nil),     // 12: nvidia.nvsentinel.v1alpha1.WatchGpusResponse
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*GetOptions)(nil),            // 2: nvidia.nvsentinel.v1alpha1.GetOptions
+	(*ListOptions)(nil),           // 3: nvidia.nvsentinel.v1alpha1.ListOptions
+	(*Gpu)(nil),                   // 4: nvidia.nvsentinel.v1alpha1.Gpu
+	(*GpuList)(nil),               // 5: nvidia.nvsentinel.v1alpha1.GpuList
+	(*GpuSpec)(nil),               // 6: nvidia.nvsentinel.v1alpha1.GpuSpec
+	(*GpuStatus)(nil),             // 7: nvidia.nvsentinel.v1alpha1.GpuStatus
+	(*Condition)(nil),             // 8: nvidia.nvsentinel.v1alpha1.Condition
+	(*GetGpuRequest)(nil),         // 9: nvidia.nvsentinel.v1alpha1.GetGpuRequest
+	(*GetGpuResponse)(nil),        // 10: nvidia.nvsentinel.v1alpha1.GetGpuResponse
+	(*ListGpusRequest)(nil),       // 11: nvidia.nvsentinel.v1alpha1.ListGpusRequest
+	(*ListGpusResponse)(nil),      // 12: nvidia.nvsentinel.v1alpha1.ListGpusResponse
+	(*WatchGpusRequest)(nil),      // 13: nvidia.nvsentinel.v1alpha1.WatchGpusRequest
+	(*WatchGpusResponse)(nil),     // 14: nvidia.nvsentinel.v1alpha1.WatchGpusResponse
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
 }
 var file_device_v1alpha1_gpu_proto_depIdxs = []int32{
 	0,  // 0: nvidia.nvsentinel.v1alpha1.Gpu.metadata:type_name -> nvidia.nvsentinel.v1alpha1.ObjectMeta
-	4,  // 1: nvidia.nvsentinel.v1alpha1.Gpu.spec:type_name -> nvidia.nvsentinel.v1alpha1.GpuSpec
-	5,  // 2: nvidia.nvsentinel.v1alpha1.Gpu.status:type_name -> nvidia.nvsentinel.v1alpha1.GpuStatus
+	6,  // 1: nvidia.nvsentinel.v1alpha1.Gpu.spec:type_name -> nvidia.nvsentinel.v1alpha1.GpuSpec
+	7,  // 2: nvidia.nvsentinel.v1alpha1.Gpu.status:type_name -> nvidia.nvsentinel.v1alpha1.GpuStatus
 	1,  // 3: nvidia.nvsentinel.v1alpha1.GpuList.metadata:type_name -> nvidia.nvsentinel.v1alpha1.ListMeta
-	2,  // 4: nvidia.nvsentinel.v1alpha1.GpuList.items:type_name -> nvidia.nvsentinel.v1alpha1.Gpu
-	6,  // 5: nvidia.nvsentinel.v1alpha1.GpuStatus.conditions:type_name -> nvidia.nvsentinel.v1alpha1.Condition
-	13, // 6: nvidia.nvsentinel.v1alpha1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
-	2,  // 7: nvidia.nvsentinel.v1alpha1.GetGpuResponse.gpu:type_name -> nvidia.nvsentinel.v1alpha1.Gpu
-	3,  // 8: nvidia.nvsentinel.v1alpha1.ListGpusResponse.gpu_list:type_name -> nvidia.nvsentinel.v1alpha1.GpuList
-	2,  // 9: nvidia.nvsentinel.v1alpha1.WatchGpusResponse.object:type_name -> nvidia.nvsentinel.v1alpha1.Gpu
-	7,  // 10: nvidia.nvsentinel.v1alpha1.GpuService.GetGpu:input_type -> nvidia.nvsentinel.v1alpha1.GetGpuRequest
-	9,  // 11: nvidia.nvsentinel.v1alpha1.GpuService.ListGpus:input_type -> nvidia.nvsentinel.v1alpha1.ListGpusRequest
-	11, // 12: nvidia.nvsentinel.v1alpha1.GpuService.WatchGpus:input_type -> nvidia.nvsentinel.v1alpha1.WatchGpusRequest
-	8,  // 13: nvidia.nvsentinel.v1alpha1.GpuService.GetGpu:output_type -> nvidia.nvsentinel.v1alpha1.GetGpuResponse
-	10, // 14: nvidia.nvsentinel.v1alpha1.GpuService.ListGpus:output_type -> nvidia.nvsentinel.v1alpha1.ListGpusResponse
-	12, // 15: nvidia.nvsentinel.v1alpha1.GpuService.WatchGpus:output_type -> nvidia.nvsentinel.v1alpha1.WatchGpusResponse
-	13, // [13:16] is the sub-list for method output_type
-	10, // [10:13] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	4,  // 4: nvidia.nvsentinel.v1alpha1.GpuList.items:type_name -> nvidia.nvsentinel.v1alpha1.Gpu
+	8,  // 5: nvidia.nvsentinel.v1alpha1.GpuStatus.conditions:type_name -> nvidia.nvsentinel.v1alpha1.Condition
+	15, // 6: nvidia.nvsentinel.v1alpha1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
+	2,  // 7: nvidia.nvsentinel.v1alpha1.GetGpuRequest.opts:type_name -> nvidia.nvsentinel.v1alpha1.GetOptions
+	4,  // 8: nvidia.nvsentinel.v1alpha1.GetGpuResponse.gpu:type_name -> nvidia.nvsentinel.v1alpha1.Gpu
+	3,  // 9: nvidia.nvsentinel.v1alpha1.ListGpusRequest.opts:type_name -> nvidia.nvsentinel.v1alpha1.ListOptions
+	5,  // 10: nvidia.nvsentinel.v1alpha1.ListGpusResponse.gpu_list:type_name -> nvidia.nvsentinel.v1alpha1.GpuList
+	3,  // 11: nvidia.nvsentinel.v1alpha1.WatchGpusRequest.opts:type_name -> nvidia.nvsentinel.v1alpha1.ListOptions
+	4,  // 12: nvidia.nvsentinel.v1alpha1.WatchGpusResponse.object:type_name -> nvidia.nvsentinel.v1alpha1.Gpu
+	9,  // 13: nvidia.nvsentinel.v1alpha1.GpuService.GetGpu:input_type -> nvidia.nvsentinel.v1alpha1.GetGpuRequest
+	11, // 14: nvidia.nvsentinel.v1alpha1.GpuService.ListGpus:input_type -> nvidia.nvsentinel.v1alpha1.ListGpusRequest
+	13, // 15: nvidia.nvsentinel.v1alpha1.GpuService.WatchGpus:input_type -> nvidia.nvsentinel.v1alpha1.WatchGpusRequest
+	10, // 16: nvidia.nvsentinel.v1alpha1.GpuService.GetGpu:output_type -> nvidia.nvsentinel.v1alpha1.GetGpuResponse
+	12, // 17: nvidia.nvsentinel.v1alpha1.GpuService.ListGpus:output_type -> nvidia.nvsentinel.v1alpha1.ListGpusResponse
+	14, // 18: nvidia.nvsentinel.v1alpha1.GpuService.WatchGpus:output_type -> nvidia.nvsentinel.v1alpha1.WatchGpusResponse
+	16, // [16:19] is the sub-list for method output_type
+	13, // [13:16] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_device_v1alpha1_gpu_proto_init() }
@@ -870,7 +1025,7 @@ func file_device_v1alpha1_gpu_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_device_v1alpha1_gpu_proto_rawDesc), len(file_device_v1alpha1_gpu_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

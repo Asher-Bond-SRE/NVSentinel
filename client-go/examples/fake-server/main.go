@@ -100,6 +100,7 @@ type fakeServer struct {
 	mu        sync.RWMutex
 	gpus      []devicev1alpha1.GPU
 	listeners map[chan struct{}]chan devicev1alpha1.GPU
+	currentRV int
 }
 
 func newFakeServer() *fakeServer {
@@ -146,8 +147,9 @@ func (s *fakeServer) simulateChanges() {
 		gpu := &s.gpus[idx]
 
 		// Increment ResourceVersion for K8s watch semantics
-		currentRv, _ := strconv.Atoi(gpu.ResourceVersion)
-		gpu.ResourceVersion = strconv.Itoa(currentRv + 1)
+		s.currentRV++
+		newRVStr := strconv.Itoa(s.currentRV)
+		gpu.ResourceVersion = newRVStr
 
 		// Toggle the Ready condition
 		isReady := gpu.Status.Conditions[0].Status == metav1.ConditionTrue
@@ -204,28 +206,40 @@ func (s *fakeServer) ListGpus(ctx context.Context, req *pb.ListGpusRequest) (*pb
 		gpuList.Items = append(gpuList.Items, devicev1alpha1.ToProto(&gpu))
 	}
 
+	gpuList.Metadata = &pb.ListMeta{
+		ResourceVersion: strconv.Itoa(s.currentRV),
+	}
+
 	return &pb.ListGpusResponse{GpuList: gpuList}, nil
 }
 
 func (s *fakeServer) WatchGpus(req *pb.WatchGpusRequest, stream pb.GpuService_WatchGpusServer) error {
-	// 1. Send Initial State (ADDED events)
-	var initial []devicev1alpha1.GPU
-	func() {
+	var requestRV int
+	if req.ResourceVersion != "" {
+		requestRV, _ = strconv.Atoi(req.ResourceVersion)
+	}
+
+	if requestRV == 0 {
+		// Send Initial State (ADDED events)
+		var initial []devicev1alpha1.GPU
 		s.mu.RLock()
-		defer s.mu.RUnlock()
 		initial = make([]devicev1alpha1.GPU, len(s.gpus))
 		for i, g := range s.gpus {
 			initial[i] = *g.DeepCopy()
 		}
-	}()
+		s.mu.RUnlock()
 
-	for _, gpu := range initial {
-		if err := stream.Send(&pb.WatchGpusResponse{Type: "ADDED", Object: devicev1alpha1.ToProto(&gpu)}); err != nil {
-			return err
+		for _, gpu := range initial {
+			if err := stream.Send(&pb.WatchGpusResponse{
+				Type:   "ADDED",
+				Object: devicev1alpha1.ToProto(&gpu),
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
-	// 2. Register for updates
+	// Register for updates
 	updateCh := make(chan devicev1alpha1.GPU, 10)
 	stopKey := make(chan struct{})
 
@@ -239,21 +253,24 @@ func (s *fakeServer) WatchGpus(req *pb.WatchGpusRequest, stream pb.GpuService_Wa
 		s.mu.Unlock()
 	}()
 
-	log.Println("Watch stream connected")
+	log.Printf("Watch stream connected (starting RV: %d)", requestRV)
 
-	// 3. Stream updates
+	// Stream updates
 	for {
 		select {
 		case <-stream.Context().Done():
 			log.Println("Watch stream disconnected")
 			return nil
 		case gpu := <-updateCh:
-			err := stream.Send(&pb.WatchGpusResponse{
-				Type:   "MODIFIED",
-				Object: devicev1alpha1.ToProto(&gpu),
-			})
-			if err != nil {
-				return err
+			gpuRV, _ := strconv.Atoi(gpu.ResourceVersion)
+			if gpuRV > requestRV {
+				err := stream.Send(&pb.WatchGpusResponse{
+					Type:   "MODIFIED",
+					Object: devicev1alpha1.ToProto(&gpu),
+				})
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

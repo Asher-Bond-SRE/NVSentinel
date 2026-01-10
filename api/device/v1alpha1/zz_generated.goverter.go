@@ -58,6 +58,7 @@ func (c *ConverterImpl) FromProtobufObjectMeta(source *v1alpha1.ObjectMeta) v1.O
 	var v1ObjectMeta v1.ObjectMeta
 	if source != nil {
 		v1ObjectMeta.Name = (*source).Name
+		v1ObjectMeta.Namespace = (*source).Namespace
 		v1ObjectMeta.ResourceVersion = (*source).ResourceVersion
 	}
 	return v1ObjectMeta
@@ -122,6 +123,7 @@ func (c *ConverterImpl) ToProtobufObjectMeta(source v1.ObjectMeta) *v1alpha1.Obj
 	var v1alpha1ObjectMeta v1alpha1.ObjectMeta
 	v1alpha1ObjectMeta.Name = source.Name
 	v1alpha1ObjectMeta.ResourceVersion = source.ResourceVersion
+	v1alpha1ObjectMeta.Namespace = source.Namespace
 	return &v1alpha1ObjectMeta
 }
 func (c *ConverterImpl) ToProtobufSpec(source GPUSpec) *v1alpha1.GpuSpec {

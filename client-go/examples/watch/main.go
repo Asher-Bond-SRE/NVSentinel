@@ -97,14 +97,17 @@ func main() {
 	list, err := clientset.DeviceV1alpha1().GPUs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		logger.Error(err, "failed to list GPUs")
-	} else {
-		logger.Info("retrieved GPU list", "count", len(list.Items))
+		os.Exit(1)
 	}
+	logger.Info("retrieved GPU list", "count", len(list.Items))
 
 	// Watch GPUs. This triggers the Stream interceptor.
-	watcher, err := clientset.DeviceV1alpha1().GPUs().Watch(ctx, metav1.ListOptions{})
+	watcher, err := clientset.DeviceV1alpha1().GPUs().Watch(ctx, metav1.ListOptions{
+		ResourceVersion: list.ResourceVersion,
+	})
 	if err != nil {
 		logger.Error(err, "failed to establish watch stream")
+		os.Exit(1)
 	} else {
 		defer watcher.Stop()
 		logger.Info("watch stream established, waiting for events...")
@@ -144,7 +147,7 @@ func main() {
 				)
 
 			case <-ctx.Done():
-				logger.Info("context timeout reached, stopping watch")
+				logger.Info("received shutdown signal, stopping watch")
 				return
 			}
 		}

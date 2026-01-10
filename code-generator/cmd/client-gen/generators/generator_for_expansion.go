@@ -20,6 +20,7 @@ Reason: The upstream package is internal and cannot be imported.
 Origin: https://github.com/kubernetes/code-generator/blob/v0.34.1/cmd/client-gen/generators/generator_for_expansion.go
 */
 
+// Package generators has the generators for the client-gen utility.
 package generators
 
 import (

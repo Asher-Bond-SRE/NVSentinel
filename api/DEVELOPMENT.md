@@ -1,23 +1,25 @@
-# Development
+# API Development
 
-## API Development Workflow
-Follow these steps to add new resources or update existing ones (e.g., `gpu_types.go`).
+## Workflow
 
-1. **Go Definitions**: Edit `device/${VERSION}/${TYPE}_types.go`.
-2. **Proto Definitions**: Edit `proto/device/${VERSION}/${TYPE}.proto`.
-3. **Registration**: Add the types to `addKnownTypes` in `device/${VERSION}/register.go`.
-4. **Conversion**: Edit `device/${VERSION}/converter.go`. See [Goverter](https://github.com/jmattheis/goverter) documentation for additional details.
-5. **Generate**: Run `make code-gen` to (re)generate Go helper functions (e.g., `zz_generated.deepcopy.go`, `zz_generated.goverter.go`) and Go protobuf API and gRPC service bindings (e.g., `gen/go/device/${version}/${type}.pb.go`, `gen/go/device/${version}/${type}_grpc.pb.go`).
+Follow these steps to add new resources or update existing fields:
+1. **Go Definitions**: Update `device/${VERSION}/${TYPE}_types.go`. Ensure you include the necessary marker comments (e.g., `// +k8s:deepcopy-gen`) required by the generators.
+2. **Proto Definitions**: Update `proto/device/${VERSION}/${TYPE}.proto`. Ensure Protobuf field numbers are never reused or changed once released.
+3. **Registration**: If adding a new **Kind**, register it in `device/${VERSION}/register.go` within the `addKnownTypes` function.
+4. **Conversion Logic**: Update the mapping interface in `device/${VERSION}/converter.go`. See [Goverter](https://github.com/jmattheis/goverter) documentation for additional details.
+5. **Generate**: Run `make code-gen`. This orchestrates `protoc`, `deepcopy-gen`, and `goverter` to refresh all artifacts.
 
 ## Conventions
+
 - **Kubernetes Resource Model (KRM)**:
-    - All Go type definitions must strictly follow the standard [Kubernetes Resource Model](https://github.com/kubernetes/design-proposals-archive/blob/main/architecture/resource-management.md).
-    - The Protobuf metadata representations _should_ be a subset of the full Kubernetes metadata containing only the minimum necessary fields.
+  - Go type definitions must strictly follow the standard [Kubernetes Resource Model](https://github.com/kubernetes/design-proposals-archive/blob/main/architecture/resource-management.md).
+  - **Separation of Concerns**: Use `Spec` for desired configuration and `Status` for observed state.
 
 ## Housekeeping
-If you need to reset your environment:
+
+If your generated files are out of sync or contain stale data:
 
 ```bash
-# Removes generated code (deepcopy, goverter)
+# Removes generated code (bindings, deepcopy, goverter)
 make clean
 ```

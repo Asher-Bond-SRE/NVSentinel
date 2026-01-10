@@ -21,6 +21,7 @@ Modified from the original to support gRPC transport.
 Origin: https://github.com/kubernetes/code-generator/blob/v0.34.1/cmd/client-gen/generators/generator_for_type.go
 */
 
+// Package generators has the generators for the client-gen utility.
 package generators
 
 import (
@@ -42,16 +43,14 @@ import (
 // genClientForType produces a file for each top-level type.
 type genClientForType struct {
 	generator.GoGenerator
-	outputPackage             string // must be a Go import-path
-	inputPackage              string
-	clientsetPackage          string // must be a Go import-path
-	applyConfigurationPackage string // must be a Go import-path
-	group                     string
-	version                   string
-	groupGoName               string
-	typeToMatch               *types.Type
-	imports                   namer.ImportTracker
-	protoPackage              clientgentypes.ProtobufPackage
+	outputPackage string // must be a Go import-path
+	inputPackage  string
+	group         string
+	version       string
+	groupGoName   string
+	typeToMatch   *types.Type
+	imports       namer.ImportTracker
+	protoPackage  clientgentypes.ProtobufPackage
 }
 
 var _ generator.Generator = &genClientForType{}
@@ -148,6 +147,8 @@ func (g *genClientForType) GenerateType(c *generator.Context, t *types.Type, w i
 		sw.Do(constructorTemplateNamespaced, m)
 	}
 
+	sw.Do(structHelpers, m)
+
 	if tags.HasVerb("get") {
 		sw.Do(getTemplate, m)
 	}
@@ -242,9 +243,9 @@ type $.type|publicPlural$Getter interface {
 var structTemplateNamespaced = `
 // $.type|allLowercasePlural$ implements $.type|public$Interface
 type $.type|allLowercasePlural$ struct {
-	client $.pb$.$.ProtoType$ServiceClient
-	logger $.logr|raw$
-	ns     string
+	client    $.pb$.$.ProtoType$ServiceClient
+	logger    $.logr|raw$
+	namespace string
 }
 `
 
@@ -260,9 +261,9 @@ var constructorTemplateNamespaced = `
 // new$.type|publicPlural$ returns a $.type|allLowercasePlural$
 func new$.type|publicPlural$(c *$.GroupGoName$$.Version$Client, namespace string) *$.type|allLowercasePlural$ {
 	return &$.type|allLowercasePlural${
-		client: $.NewServiceClient$(c.ClientConn()),
-		logger: c.logger.WithName("$.type|allLowercasePlural$"),
-		ns:     namespace,
+		client:    $.NewServiceClient$(c.ClientConn()),
+		logger:    c.logger.WithName("$.type|allLowercasePlural$"),
+		namespace: namespace,
 	}
 }
 `
@@ -277,10 +278,22 @@ func new$.type|publicPlural$(c *$.GroupGoName$$.Version$Client) *$.type|allLower
 }
 `
 
+var structHelpers = `
+func (c *$.type|allLowercasePlural$) getNamespace() string {
+	if c == nil {
+		return ""
+	}
+	return $if .namespaced$c.namespace$else$""$end$
+}
+`
+
 var listTemplate = `
 func (c *$.type|allLowercasePlural$) List(ctx $.context|raw$, opts $.ListOptions|raw$) (*$.type|raw$List, error) {
 	resp, err := c.client.List$.ProtoType$s(ctx, &$.pb$.List$.ProtoType$sRequest{
-		ResourceVersion: opts.ResourceVersion,
+		Opts: &$.pb$.ListOptions{
+			ResourceVersion: opts.ResourceVersion,
+			Namespace:       c.getNamespace(),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -288,6 +301,7 @@ func (c *$.type|allLowercasePlural$) List(ctx $.context|raw$, opts $.ListOptions
 
 	list := $.FromProtoList|raw$(resp.Get$.ProtoType$List())
 	c.logger.V(5).Info("Listed $.type|public$s",
+	    "namespace", c.getNamespace(),
 		"count", len(list.Items),
 		"resource-version", list.GetResourceVersion(),
 	)
@@ -300,6 +314,10 @@ var getTemplate = `
 func (c *$.type|allLowercasePlural$) Get(ctx $.context|raw$, name string, opts $.GetOptions|raw$) (*$.type|raw$, error) {
 	resp, err := c.client.Get$.ProtoType$(ctx, &$.pb$.Get$.ProtoType$Request{
 		Name: name,
+		Opts: &$.pb$.GetOptions{
+			ResourceVersion: opts.ResourceVersion,
+			Namespace:       c.getNamespace(),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -308,6 +326,7 @@ func (c *$.type|allLowercasePlural$) Get(ctx $.context|raw$, name string, opts $
 	obj := $.FromProto|raw$(resp.Get$.ProtoType$())
 	c.logger.V(6).Info("Fetched $.type|public$",
 		"name", name,
+	    "namespace", c.getNamespace(),
 		"resource-version", obj.GetResourceVersion(),
 	)
 
@@ -343,12 +362,16 @@ var watchTemplate = `
 func (c *$.type|allLowercasePlural$) Watch(ctx $.context|raw$, opts $.ListOptions|raw$) ($.watchInterface|raw$, error) {
 	c.logger.V(4).Info("Opening watch stream",
 		"resource", "$.type|allLowercasePlural$",
+		"namespace", c.getNamespace(),
 		"resource-version", opts.ResourceVersion,
 	)
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := c.client.Watch$.ProtoType$s(ctx, &$.pb$.Watch$.ProtoType$sRequest{
-		ResourceVersion: opts.ResourceVersion,
+		Opts: &$.pb$.ListOptions{
+			ResourceVersion: opts.ResourceVersion,
+			Namespace:       c.getNamespace(),
+		},
 	})
 	if err != nil {
 		cancel()

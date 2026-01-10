@@ -22,6 +22,8 @@ reviews:
     - "!client-go/client/**"                                # Ignore generated clientset
     - "!client-go/listers/**"                               # Ignore generated listers
     - "!client-go/informers/**"                             # Ignore generated informers
+    - "!code-generator/cmd/client-gen/args/gvtype.go"       # Ignore copied, unmodified upstream code
+    - "!code-generator/cmd/client-gen/args/gvpackages.go"   # Ignore copied, unmodified upstream code
     - "!code-generator/cmd/client-gen/types/**"             # Ignore copied, unmodified upstream code
-    - "!code-generator/cmd/client-gen/generators/scheme/**" # Ignore copied, unmodified upsteam code
-    - "!code-generator/cmd/client-gen/generators/util/**"   # Ignore copied, unmodified upsteam code
+    - "!code-generator/cmd/client-gen/generators/scheme/**" # Ignore copied, unmodified upstream code
+    - "!code-generator/cmd/client-gen/generators/util/**"   # Ignore copied, unmodified upstream code

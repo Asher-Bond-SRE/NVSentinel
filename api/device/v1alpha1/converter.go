@@ -129,5 +129,8 @@ func FromProtobufTimestamp(source *timestamppb.Timestamp) metav1.Time {
 
 // ToProtobufTimestamp converts a metav1.Time to a protobuf Timestamp message.
 func ToProtobufTimestamp(source metav1.Time) *timestamppb.Timestamp {
+	if source.IsZero() {
+		return nil
+	}
 	return timestamppb.New(source.Time)
 }

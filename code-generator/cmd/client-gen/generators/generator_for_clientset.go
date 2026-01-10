@@ -21,6 +21,7 @@ Modified from the original to support gRPC transport.
 Origin: https://github.com/kubernetes/code-generator/blob/v0.34.1/cmd/client-gen/generators/generator_for_clientset.go
 */
 
+// Package generators has the generators for the client-gen utility.
 package generators
 
 import (
