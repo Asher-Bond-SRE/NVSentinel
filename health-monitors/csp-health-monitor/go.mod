@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/compute v1.52.0
 	cloud.google.com/go/logging v1.13.1
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aws/aws-sdk-go-v2 v1.41.0
+	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.6
 	github.com/aws/aws-sdk-go-v2/service/health v1.36.0
 	github.com/hashicorp/go-multierror v1.1.1
