@@ -56,12 +56,11 @@ body:
     attributes:
       label: Component
       options:
-        - Health Monitor
-        - Core Service
-        - Fault Management
-        - Deployment/Config
-        - API/Interface
-        - New Component
-        - Multiple Components
+        - Proto Definitions
+        - New Resource Type
+        - API Enhancement
+        - Build/Tooling
+        - Documentation
+        - Other
     validations:
       required: true

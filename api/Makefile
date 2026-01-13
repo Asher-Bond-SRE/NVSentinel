@@ -70,7 +70,6 @@ protos-generate: $(PROTOC_GEN_GO) $(PROTOC_GEN_GO_GRPC) protos-clean ## Generate
 	@mkdir -p $(GEN_DIR)
 	cd proto && protoc \
 		-I . \
-		-I ../$(THIRD_PARTY_DIR) \
 		--plugin="protoc-gen-go=$(PROTOC_GEN_GO)" \
 		--plugin="protoc-gen-go-grpc=$(PROTOC_GEN_GO_GRPC)" \
 		--go_out=../$(GEN_DIR) \

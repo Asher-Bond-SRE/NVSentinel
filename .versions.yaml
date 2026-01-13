@@ -12,71 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Centralized Tool Versions
-# 
-# This file defines the canonical versions for all tools, languages, and dependencies
-# used across the NVSentinel project. All installation scripts, CI/CD workflows, and
-# Makefiles should reference this file as the single source of truth.
+# Centralized Tool Versions for NVIDIA Device API
 #
-# Usage:
-#   - GitHub Actions: Read and parse this file in versions.yaml
-#   - Makefiles: Source versions using yq or similar YAML parser
-#   - Documentation: Reference this file for version requirements
-#
-# When updating versions:
-#   1. Update the version here
-#   2. Test locally with: make install-lint-tools, make install-go-ci
-#   3. Verify CI/CD workflows still pass
-#   4. Update DEVELOPMENT.md if there are breaking changes
+# This file defines the canonical versions for all tools used in this project.
+# The api/Makefile references this file for protobuf tool versions.
 
 # Language Versions
 languages:
   go: '1.25'
-  python: '3.10'
-
-# Build & Package Management
-build_tools:
-  poetry: '1.8.2'
-
-# Go Development Tools
-go_tools:
-  golangci_lint: 'v2.5.0'
-  gotestsum: 'v1.13.0'
-  gocover_cobertura: 'v1.4.0'
-  setup_envtest: 'latest'
-  goimports: 'v0.30.0'
-  crane: 'v0.20.2'
 
 # Protocol Buffers / gRPC
 protobuf:
   protobuf: 'v33.0'
   protoc_gen_go: 'v1.36.10'
   protoc_gen_go_grpc: 'v1.5.1'
-  grpcio_tools: '1.75.1'
 
-# Linting & Validation
-linting:
-  shellcheck: 'v0.11.0'
-  addlicense: 'v1.2.0'
-  black: '25.9.0'
-
-# Container Tools
-container_tools:
-  docker_buildx: 'latest'
-  ko: 'v0.18.0'
-
-# Testing & E2E Tools
-testing_tools:
-  kind: '0.30.0'
-  helm: 'v3.19.2'
-  kwok: 'v0.7.0'
-  kwok_chart: '0.2.0'  # KWOK Helm chart version (different from app version)
-  ctlptl: '0.8.43'
-  tilt: '0.35.2'
-
-# Cluster Dependencies
-cluster:
-  prometheus_operator: '78.5.0'
-  gpu_operator: 'v25.10.0'
-  cert_manager: '1.19.1'
-  policy_controller: '0.10.5'  # Sigstore Policy Controller Helm chart version
+# Go Development Tools
+go_tools:
+  golangci_lint: 'v2.5.0'

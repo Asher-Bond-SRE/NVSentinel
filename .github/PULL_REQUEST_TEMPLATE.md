@@ -4,26 +4,14 @@
 
 ## Type of Change
 - [ ] 🐛 Bug fix
-- [ ] ✨ New feature
+- [ ] ✨ New feature (new message, field, or service method)
 - [ ] 💥 Breaking change
 - [ ] 📚 Documentation
-- [ ] 🔧 Refactoring
-- [ ] 🔨 Build/CI
-
-## Component(s) Affected
-- [ ] Core Services
-- [ ] Documentation/CI
-- [ ] Fault Management
-- [ ] Health Monitors
-- [ ] Janitor
-- [ ] Other: ____________
-
-## Testing
-- [ ] Tests pass locally
-- [ ] Manual testing completed
-- [ ] No breaking changes (or documented)
+- [ ] 🔧 Build/Tooling
 
 ## Checklist
+- [ ] Proto files compile successfully (`make protos-generate`)
+- [ ] Generated code is up to date and committed
 - [ ] Self-review completed
 - [ ] Documentation updated (if needed)
-- [ ] Ready for review
+- [ ] Signed-off commits (DCO)
