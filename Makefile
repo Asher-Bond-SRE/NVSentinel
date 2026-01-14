@@ -13,40 +13,80 @@
 # limitations under the License.
 
 # Main Makefile for NVIDIA Device API
-# Delegates to api/Makefile for all operations
+
+# ==============================================================================
+# Configuration
+# ==============================================================================
+
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -ec
+
+# Modules to manaage.
+MODULES := api client-go code-generator
+
+# ==============================================================================
+# Targets
+# ==============================================================================
 
 .PHONY: all
-all: ## Build and generate all (delegates to api/)
-	$(MAKE) -C api all
+all: code-gen test build ## Run code generation, test, and build for all modules.
 
-.PHONY: build
-build: ## Build the Go module (delegates to api/)
-	$(MAKE) -C api build
-
-.PHONY: protos-generate
-protos-generate: ## Generate Go code from Proto definitions (delegates to api/)
-	$(MAKE) -C api protos-generate
-
-.PHONY: protos-clean
-protos-clean: ## Remove generated code (delegates to api/)
-	$(MAKE) -C api protos-clean
-
-.PHONY: lint
-lint: ## Run linting checks
-	cd api && go vet ./...
-
-.PHONY: test
-test: ## Run tests
-	cd api && go test ./...
-
-.PHONY: clean
-clean: protos-clean ## Clean all generated and build artifacts
-	rm -rf api/bin/
+##@ General
 
 .PHONY: help
-help: ## Display this help
-	@echo "NVIDIA Device API Makefile"
-	@echo ""
-	@echo "Available targets:"
-	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort -u | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Development
+
+.PHONY: code-gen
+code-gen: ## Run code generation in all modules.
+	$(MAKE) -C api code-gen
+	$(MAKE) -C client-go code-gen
+
+.PHONY: verify-codegen
+verify-codegen: code-gen ## Verify generated code is up-to-date.
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "ERROR: Generated code is out of date. Run 'make code-gen'."; \
+		git status --porcelain; \
+		git --no-pager diff; \
+		exit 1; \
+	fi
+
+.PHONY: build
+build: ## Build all modules.
+	@for mod in $(MODULES); do \
+		if [ -f $$mod/Makefile ]; then \
+			$(MAKE) -C $$mod build; \
+		fi \
+	done
+
+.PHONY: test
+test: ## Run tests in all modules.
+	@for mod in $(MODULES); do \
+		if [ -f $$mod/Makefile ]; then \
+			$(MAKE) -C $$mod test; \
+		fi \
+	done
+
+.PHONY: lint
+lint: ## Run linting on all modules.
+	@for mod in $(MODULES); do \
+		if [ -f $$mod/Makefile ]; then \
+			$(MAKE) -C $$mod lint; \
+		fi \
+	done
+
+clean: ## Clean generated artifacts in all modules.
+	@for mod in $(MODULES); do \
+		if [ -f $$mod/Makefile ]; then \
+			$(MAKE) -C $$mod clean; \
+		fi \
+	done
+
+.PHONY: tidy
+tidy: ## Run go mod tidy on all modules.
+	@for mod in $(MODULES); do \
+		echo "Tidying $$mod..."; \
+		(cd $$mod && go mod tidy); \
+	done

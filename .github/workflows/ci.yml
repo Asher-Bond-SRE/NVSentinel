@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Lint and Test
+name: CI
 
 on:
   push:
     branches:
-      - main
+      - device-api
   pull_request:
     branches:
-      - main
+      - device-api
   workflow_dispatch:
 
 concurrency:
@@ -31,7 +31,8 @@ permissions:
   contents: read
 
 jobs:
-  lint-test:
+  go:
+    name: Go
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -42,36 +43,32 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: "**/go.sum"
 
-      - name: Install yq
+      - name: Install tools
         run: |
+          echo "Installing yq..."
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-      - name: Install protoc
-        run: |
+          echo "Installing protoc..."
           PROTOC_VERSION=$(yq eval '.protobuf.protobuf' .versions.yaml | sed 's/v//')
           curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip
           sudo unzip -o protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local
           rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
-      - name: Generate protobuf code
-        run: make -C api protos-generate
+          echo "Installing golangci-lint..."
+          LINT_VERSION=$(yq eval '.go_tools.golangci_lint' .versions.yaml)
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin $LINT_VERSION
 
-      - name: Verify no changes
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Generated code is out of date. Please run 'make protos-generate' and commit the changes."
-            git diff
-            exit 1
-          fi
+      - name: Generate
+        run: make verify-codegen
 
-      - name: Run go vet
-        run: cd api && go vet ./...
+      - name: Lint
+        run: make lint
 
       - name: Build
-        run: make -C api build
+        run: make build
 
-      - name: Run tests
-        run: cd api && go test -v ./...
+      - name: Test
+        run: make test

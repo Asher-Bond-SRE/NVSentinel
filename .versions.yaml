@@ -19,14 +19,21 @@
 
 # Language Versions
 languages:
-  go: '1.25'
+  go: '1.25.5'
+
+# Go Development Tools
+go_tools:
+  golangci_lint: 'v2.5.0'
+  gotestsum: 'v1.13.0'
+  gocover_cobertura: 'v1.4.0'
+  setup_envtest: 'latest'
+  goimports: 'v0.30.0'
+  crane: 'v0.20.2'
+  goverter: 'v1.9.3'
+  kubernetes_code_gen: 'v0.34.1'
 
 # Protocol Buffers / gRPC
 protobuf:
   protobuf: 'v33.0'
   protoc_gen_go: 'v1.36.10'
   protoc_gen_go_grpc: 'v1.5.1'
-
-# Go Development Tools
-go_tools:
-  golangci_lint: 'v2.5.0'
