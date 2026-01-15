@@ -1,4 +1,4 @@
-# Controller Example
+# NVIDIA Device API: Controller Example
 
 This example demonstrates how to use the NVIDIA Device API client with `controller-runtime` to drive standard Reconcilers.
 
@@ -9,6 +9,8 @@ This example demonstrates how to use the NVIDIA Device API client with `controll
 - **Transparent Caching**: Ensuring `mgr.GetClient()` calls are automatically routed to the local gRPC-backed cache for Device resources. 
 - **Controller-Runtime Integration**: Using standard `builder` patterns to set up controllers that react to local hardware events as if they were standard Kubernetes objects.
 
+---
+
 ## Running
 
 1. Ensure the [Fake Server](../fake-server) is running.
@@ -17,11 +19,11 @@ This example demonstrates how to use the NVIDIA Device API client with `controll
 ```bash
 sudo go run main.go
 ```
-**Note:** `sudo` is required for the default socket path in `/var/run/`. Override the path with the `NVIDIA_DEVICE_API_TARGET` environment variable if using a custom location.
-
 To stop the controller, press `Ctrl+C`
 
-## Expected Output
+> [!NOTE] `sudo` is required for the default socket path in `/var/run/`. Override the path with the `NVIDIA_DEVICE_API_TARGET` environment variable if using a custom location.
+
+### Expected Output
 
 ```text
 INFO    setup   starting manager
@@ -33,3 +35,5 @@ INFO    Reconciled GPU  {"controller": "gpu", "name": "gpu-1", "uuid": "GPU-6bc0
 INFO    Reconciled GPU  {"controller": "gpu", "name": "gpu-2", "uuid": "GPU-0851fc7c..."}
 ...
 ```
+
+---

@@ -1,4 +1,4 @@
-# Client Example
+# NVIDIA Device API: Client Example
 
 This example demonstrates how to use the NVIDIA Device API client to interact with node-local resources.
 
@@ -8,6 +8,8 @@ This example demonstrates how to use the NVIDIA Device API client to interact wi
 * **K8s-Native Verbs**: Using standard `Get` and `List` operations to retrieve point-in-time resource snapshots.
 * **Status Evaluation**: Using standard Kubernetes `meta` helpers to check resource readiness and conditions.
 
+---
+
 ## Running
 
 1. Ensure the [Fake Server](../fake-server) is running.
@@ -16,9 +18,10 @@ This example demonstrates how to use the NVIDIA Device API client to interact wi
 ```bash
 sudo go run main.go
 ```
-**Note:** `sudo` is required for the default socket path in `/var/run/`. Override the path with the `NVIDIA_DEVICE_API_TARGET` environment variable if using a custom location.
 
-## Expected Output
+> [!NOTE] `sudo` is required for the default socket path in `/var/run/`. Override the path with the `NVIDIA_DEVICE_API_TARGET` environment variable if using a custom location.
+
+### Expected Output
 
 ```text
 "level"=0 "msg"="discovered GPUs" "count"=8 "target"="unix:///tmp/nvidia-device-api.sock"
@@ -29,3 +32,5 @@ sudo go run main.go
 ...
 "level"=0 "msg"="status" "name"="gpu-7" "uuid"="GPU-66ba2ccd..." "status"="NotReady"
 ```
+
+---
