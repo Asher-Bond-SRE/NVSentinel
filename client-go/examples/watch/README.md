@@ -1,4 +1,4 @@
-# Watch Example
+# NVIDIA Device API: Watch Example
 
 This example demonstrates how to set up and use the NVIDIA Device API client to react to asynchronous operations.
 
@@ -9,6 +9,8 @@ This example demonstrates how to set up and use the NVIDIA Device API client to 
 * **Stream Processing**: Implementing long-lived `Watch()` streams with an asynchronous event-loop.
 * **Context Handling**: Ensuring clean shutdowns by handling system signals (SIGTERM) and managing context-aware stream cancelation.
 
+---
+
 ## Running
 
 1. Ensure the [Fake Server](../fake-server) is running.
@@ -17,11 +19,11 @@ This example demonstrates how to set up and use the NVIDIA Device API client to 
 ```bash
 sudo go run main.go
 ```
-**Note:** `sudo` is required for the default socket path in `/var/run/`. Override the path with the `NVIDIA_DEVICE_API_TARGET` environment variable if using a custom location.
-
 To stop the application, press `Ctrl+C`
 
-## Expected Output
+> [!NOTE] `sudo` is required for the default socket path in `/var/run/`. Override the path with the `NVIDIA_DEVICE_API_TARGET` environment variable if using a custom location.
+
+### Expected Output
 
 ```text
 "level"=0 "msg"="retrieved GPU list" "count"=8
@@ -32,3 +34,5 @@ To stop the application, press `Ctrl+C`
 ...
 "level"=0 "msg"="gpu status changed" "event"="MODIFIED" "name"="gpu-1" "uuid"="GPU-2e6d5c15..." "status"="NotReady"
 ```
+
+---

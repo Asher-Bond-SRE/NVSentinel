@@ -1,4 +1,4 @@
-# Fake Client Example
+# NVIDIA Device API: Fake Client Example
 
 This example demonstrates how to use the NVIDIA Device API generated **fake versioned client** with a `SharedInformerFactory` in tests.
 
@@ -8,7 +8,11 @@ This example demonstrates how to use the NVIDIA Device API generated **fake vers
 * **Watch Reactors**: Using `PrependWatchReactor` to synchronize the transition from `LIST` to `WATCH`, preventing race conditions during event injection.
 * **Tracker Injection**: Directly modifying the `ObjectTracker` to simulate "server-side" events, such as a discovery agent reporting a new device.
 
+---
+
 ## Running
 ```bash
 go test -v -run TestGPUInformerWithFakeClient
 ```
+
+---

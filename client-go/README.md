@@ -1,6 +1,6 @@
-# NVIDIA Device API Go Client
+# NVIDIA Device API: Go Client
 
-`nvidia/client-go` is the official Go SDK for interacting with the node-local NVIDIA Device API. It provides a Kubernetes-native developer experience for building node-level agents, telemetry sidecars, and operators **driven by local device state.**
+The `client-go` module is the official Go SDK for interacting with the node-local NVIDIA Device API. It provides a Kubernetes-native developer experience for building node-level agents, telemetry sidecars, and operators **driven by local device state.**
 
 By utilizing a node-local gRPC transport, this SDK allows agents to query device telemetry and status **without putting load on the central Kubernetes API server**. This architecture enables fine-grained **hardware monitoring** that scales independently of the cluster control plane.
 
@@ -39,8 +39,8 @@ import (
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/api/meta"
-    "github.com/nvidia/nvsentinel/client-go/pkg/clientset/versioned"
-    "github.com/nvidia/nvsentinel/client-go/pkg/nvgrpc"
+    "github.com/nvidia/nvsentinel/client-go/clientset/versioned"
+    "github.com/nvidia/nvsentinel/client-go/nvgrpc"
 )
 func main() {
     config := &nvgrpc.Config{Target: "unix:///var/run/nvidia-device-api/device-api.sock"}
@@ -96,4 +96,6 @@ volumes:
 
 ## Development
 
-Refer to [DEVELOPMENT.md](./DEVELOPMENT.md) for instructions on building the client and running the code generation pipeline.
+Refer to this module's [Development Guide](./DEVELOPMENT.md) for instructions on building the client and running the code generation pipeline.
+
+---
