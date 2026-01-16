@@ -138,6 +138,13 @@ spec:
           env:
             - name: LOG_LEVEL
               value: "{{ .Values.logLevel }}"
+            {{- if .Values.global.datastore.credentials.existingSecret }}
+            - name: DATASTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.datastore.credentials.existingSecret }}
+                  key: {{ .Values.global.datastore.credentials.existingSecretPasswordKey | default "password" }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ if .Values.global.datastore }}{{ .Release.Name }}-datastore-config{{ else }}mongodb-config{{ end }}
@@ -197,6 +204,13 @@ spec:
           env:
             - name: LOG_LEVEL
               value: "{{ .Values.quarantineTriggerEngine.logLevel | default .Values.logLevel }}"
+            {{- if .Values.global.datastore.credentials.existingSecret }}
+            - name: DATASTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.datastore.credentials.existingSecret }}
+                  key: {{ .Values.global.datastore.credentials.existingSecretPasswordKey | default "password" }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ if .Values.global.datastore }}{{ .Release.Name }}-datastore-config{{ else }}mongodb-config{{ end }}

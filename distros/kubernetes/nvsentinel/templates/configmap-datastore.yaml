@@ -62,9 +62,6 @@ data:
   {{- if .Values.global.datastore.connection.username }}
   DATASTORE_USERNAME: {{ .Values.global.datastore.connection.username | quote }}
   {{- end }}
-  {{- if .Values.global.datastore.connection.password }}
-  DATASTORE_PASSWORD: {{ .Values.global.datastore.connection.password | quote }}
-  {{- end }}
   {{- if .Values.global.datastore.connection.sslmode }}
   DATASTORE_SSLMODE: {{ .Values.global.datastore.connection.sslmode | quote }}
   {{- end }}
