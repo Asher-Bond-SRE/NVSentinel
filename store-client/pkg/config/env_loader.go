@@ -187,15 +187,59 @@ func NewDatabaseConfigWithCollection(
 		return newPostgreSQLCompatibleConfig(certMountPath, collectionEnvVar, defaultCollection)
 	}
 
-	// Load required MongoDB environment variables
-	connectionURI := os.Getenv(EnvMongoDBURI)
-	if connectionURI == "" {
-		return nil, fmt.Errorf("required environment variable %s is not set", EnvMongoDBURI)
-	}
+	// Build MongoDB connection URI and certConfig
+	password := os.Getenv("DATASTORE_PASSWORD")
+	var connectionURI string
+	var certConfig *StandardCertificateConfig
+	var databaseName string
 
-	databaseName := os.Getenv(EnvMongoDBDatabaseName)
-	if databaseName == "" {
-		return nil, fmt.Errorf("required environment variable %s is not set", EnvMongoDBDatabaseName)
+	if password != "" {
+		// Password authentication (non-TLS)
+		host := os.Getenv("DATASTORE_HOST")
+		if host == "" {
+			return nil, fmt.Errorf("required environment variable DATASTORE_HOST is not set when using DATASTORE_PASSWORD")
+		}
+
+		port := os.Getenv("DATASTORE_PORT")
+		if port == "" {
+			port = "27017" // Default MongoDB port
+		}
+
+		database := os.Getenv("DATASTORE_DATABASE")
+		if database == "" {
+			return nil, fmt.Errorf("required environment variable DATASTORE_DATABASE is not set when using DATASTORE_PASSWORD")
+		}
+
+		username := os.Getenv("DATASTORE_USERNAME")
+		if username == "" {
+			return nil, fmt.Errorf("required environment variable DATASTORE_USERNAME is not set when using DATASTORE_PASSWORD")
+		}
+
+		connectionURI = fmt.Sprintf("mongodb://%s:%s@%s:%s/%s?tls=false",
+			username, password, host, port, database)
+		databaseName = database
+		certConfig = &StandardCertificateConfig{
+			certPath:   "",
+			keyPath:    "",
+			caCertPath: "",
+		}
+	} else {
+		// Certificate authentication (TLS)
+		connectionURI = os.Getenv(EnvMongoDBURI)
+		if connectionURI == "" {
+			return nil, fmt.Errorf("required environment variable %s is not set", EnvMongoDBURI)
+		}
+
+		databaseName = os.Getenv(EnvMongoDBDatabaseName)
+		if databaseName == "" {
+			return nil, fmt.Errorf("required environment variable %s is not set", EnvMongoDBDatabaseName)
+		}
+
+		certConfig = &StandardCertificateConfig{
+			certPath:   filepath.Join(certMountPath, "tls.crt"),
+			keyPath:    filepath.Join(certMountPath, "tls.key"),
+			caCertPath: filepath.Join(certMountPath, "ca.crt"),
+		}
 	}
 
 	// Determine which collection environment variable to use
@@ -217,13 +261,6 @@ func NewDatabaseConfigWithCollection(
 	timeoutConfig, err := loadTimeoutConfigFromEnv()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load timeout configuration: %w", err)
-	}
-
-	// Build certificate configuration
-	certConfig := &StandardCertificateConfig{
-		certPath:   filepath.Join(certMountPath, "tls.crt"),
-		keyPath:    filepath.Join(certMountPath, "tls.key"),
-		caCertPath: filepath.Join(certMountPath, "ca.crt"),
 	}
 
 	return &StandardDatabaseConfig{
