@@ -28,6 +28,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/nvidia/nvsentinel/commons/pkg/metricsutil"
 	"github.com/nvidia/nvsentinel/commons/pkg/statemanager"
 	"github.com/nvidia/nvsentinel/data-models/pkg/model"
 	"github.com/nvidia/nvsentinel/data-models/pkg/protos"
@@ -843,7 +844,11 @@ func (r *Reconciler) updateQuarantineMetrics(
 
 	if isCordoned.Load() {
 		metrics.CordonsApplied.Inc()
-		metrics.RecordNodeCordonDuration(nodeName, generatedTimestamp)
+
+		duration := metricsutil.CalculateDurationSeconds(generatedTimestamp)
+		if duration > 0 {
+			metrics.NodeCordonDuration.Observe(duration)
+		}
 	}
 }
 

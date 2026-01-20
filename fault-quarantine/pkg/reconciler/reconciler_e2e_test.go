@@ -3627,6 +3627,14 @@ func getGaugeVecValue(t *testing.T, gaugeVec *prometheus.GaugeVec, labelValues .
 	return metric.Gauge.GetValue()
 }
 
+func getHistogramCount(t *testing.T, histogram prometheus.Histogram) uint64 {
+	t.Helper()
+	metric := &dto.Metric{}
+	err := histogram.Write(metric)
+	require.NoError(t, err)
+	return metric.Histogram.GetSampleCount()
+}
+
 func TestE2E_HealthyEventForUntrackedCheckNotPropagated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(e2eTestContext, 20*time.Second)
 	defer cancel()
@@ -4331,4 +4339,92 @@ func TestE2E_ConcurrentHealthyEvents_WithDelayedInformer(t *testing.T) {
 		}
 	}
 	require.Equal(t, 0, fqTaintCount, "FQ taints should be removed")
+}
+
+// TestMetrics_NodeCordonDuration verifies that NodeCordonDuration metric is recorded correctly
+func TestMetrics_NodeCordonDuration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(e2eTestContext, 20*time.Second)
+	defer cancel()
+
+	nodeName := "metrics-cordon-duration-" + generateShortTestID()
+	createE2ETestNode(ctx, t, nodeName, nil, nil, nil, false)
+	defer func() {
+		_ = e2eTestClient.CoreV1().Nodes().Delete(ctx, nodeName, metav1.DeleteOptions{})
+	}()
+
+	tomlConfig := config.TomlConfig{
+		LabelPrefix: "k8s.nvidia.com/",
+		RuleSets: []config.RuleSet{
+			{
+				Name:     "gpu-xid-critical-errors",
+				Version:  "1",
+				Priority: 10,
+				Match: config.Match{
+					Any: []config.Rule{
+						{Kind: "HealthEvent", Expression: "event.checkName == 'GpuXidError' && event.isFatal == true"},
+					},
+				},
+				Taint:  config.Taint{Key: "nvidia.com/gpu-xid-error", Value: "true", Effect: "NoSchedule"},
+				Cordon: config.Cordon{ShouldCordon: true},
+			},
+		},
+	}
+
+	_, mockWatcher, _, _ := setupE2EReconciler(t, ctx, tomlConfig, nil)
+
+	beforeCordonDuration := getHistogramCount(t, metrics.NodeCordonDuration)
+
+	t.Log("Sending unhealthy event with GeneratedTimestamp set to 5 seconds ago")
+	eventID1 := generateTestID()
+
+	generatedTime := time.Now().Add(-5 * time.Second)
+	mockWatcher.EventsChan <- &TestEvent{Data: datastore.Event{
+		"operationType": "insert",
+		"fullDocument": datastore.Event{
+			"_id": eventID1,
+			"healtheventstatus": datastore.Event{
+				"nodequarantined": model.StatusInProgress,
+			},
+			"healthevent": datastore.Event{
+				"nodename":       nodeName,
+				"agent":          "gpu-health-monitor",
+				"componentclass": "GPU",
+				"checkname":      "GpuXidError",
+				"version":        uint32(1),
+				"ishealthy":      false,
+				"isfatal":        true,
+				"generatedtimestamp": datastore.Event{
+					"seconds": generatedTime.Unix(),
+					"nanos":   int32(generatedTime.Nanosecond()),
+				},
+				"entitiesimpacted": []interface{}{
+					datastore.Event{
+						"entitytype":  "GPU",
+						"entityvalue": "0",
+					},
+				},
+			},
+		},
+	}}
+
+	t.Log("Waiting for node to be quarantined and cordoned")
+	require.Eventually(t, func() bool {
+		node, err := e2eTestClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+		return node.Spec.Unschedulable && node.Annotations[common.QuarantineHealthEventAnnotationKey] != ""
+	}, eventuallyTimeout, eventuallyPollInterval, "Node should be quarantined and cordoned")
+
+	t.Log("Verifying NodeCordonDuration metric was recorded")
+	require.Eventually(t, func() bool {
+		afterCordonDuration := getHistogramCount(t, metrics.NodeCordonDuration)
+		return afterCordonDuration > beforeCordonDuration
+	}, statusCheckTimeout, statusCheckPollInterval, "NodeCordonDuration metric should be recorded")
+
+	afterCordonDuration := getHistogramCount(t, metrics.NodeCordonDuration)
+	assert.GreaterOrEqual(t, afterCordonDuration, beforeCordonDuration+1,
+		"NodeCordonDuration histogram should record at least one observation")
+
+	t.Log("NodeCordonDuration metric recorded successfully")
 }

@@ -1608,3 +1608,39 @@ func TestReconciler_CustomDrainCRDNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to initialize custom drain client", "Error should indicate custom drain client initialization failure")
 	assert.Contains(t, err.Error(), "failed to find rest mapping for custom drain CRD", "Error should indicate CRD validation failure")
 }
+
+func TestMetrics_PodEvictionDuration(t *testing.T) {
+	setup := setupRequeueTest(t, []config.UserNamespace{
+		{Name: "immediate-*", Mode: config.ModeImmediateEvict},
+	})
+
+	nodeName := "metrics-eviction-duration-node"
+	createNode(setup.ctx, t, setup.client, nodeName)
+	createNamespace(setup.ctx, t, setup.client, "immediate-test")
+	createPod(setup.ctx, t, setup.client, "immediate-test", "test-pod", nodeName, v1.PodRunning)
+
+	beforeEvictionDuration := getHistogramCount(t, metrics.PodEvictionDuration)
+
+	receivedAt := time.Now().Add(-5 * time.Second)
+	event := createHealthEvent(healthEventOptions{
+		nodeName:        nodeName,
+		nodeQuarantined: model.Quarantined,
+	})
+	event["_received_at"] = receivedAt.Unix()
+
+	err := setup.queueMgr.EnqueueEventGeneric(setup.ctx, nodeName, event, setup.mockCollection)
+	require.NoError(t, err)
+
+	assertPodsEvicted(t, setup.client, setup.ctx, "immediate-test")
+
+	assertNodeLabel(t, setup.client, setup.ctx, nodeName, statemanager.DrainSucceededLabelValue)
+
+	require.Eventually(t, func() bool {
+		afterEvictionDuration := getHistogramCount(t, metrics.PodEvictionDuration)
+		return afterEvictionDuration > beforeEvictionDuration
+	}, 10*time.Second, 500*time.Millisecond, "PodEvictionDuration metric should be recorded")
+
+	afterEvictionDuration := getHistogramCount(t, metrics.PodEvictionDuration)
+	assert.GreaterOrEqual(t, afterEvictionDuration, beforeEvictionDuration+1,
+		"PodEvictionDuration histogram should record at least one observation")
+}

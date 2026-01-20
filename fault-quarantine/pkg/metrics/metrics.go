@@ -15,8 +15,6 @@
 package metrics
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -187,9 +185,4 @@ func SetFaultQuarantineBreakerUtilization(utilization float64) {
 func SetFaultQuarantineBreakerState(state string) {
 	FaultQuarantineBreakerState.Reset()
 	FaultQuarantineBreakerState.WithLabelValues(state).Set(1)
-}
-
-// RecordNodeCordonDuration records the time from health event generation to node cordon completion
-func RecordNodeCordonDuration(nodeName string, generatedTimestamp time.Time) {
-	NodeCordonDuration.Observe(time.Since(generatedTimestamp).Seconds())
 }

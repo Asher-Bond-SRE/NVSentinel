@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/restmapper"
 
 	"github.com/nvidia/nvsentinel/commons/pkg/eventutil"
+	"github.com/nvidia/nvsentinel/commons/pkg/metricsutil"
 	"github.com/nvidia/nvsentinel/commons/pkg/statemanager"
 	"github.com/nvidia/nvsentinel/data-models/pkg/model"
 	"github.com/nvidia/nvsentinel/node-drainer/pkg/config"
@@ -510,20 +511,25 @@ func (r *Reconciler) executeMarkAlreadyDrained(ctx context.Context,
 		nodeName, metrics.DrainStatusSkipped)
 }
 
+func extractReceivedAtTimestamp(event datastore.Event) time.Time {
+	if receivedAtInt, ok := event["_received_at"].(int64); ok {
+		return time.Unix(receivedAtInt, 0)
+	}
+
+	return time.Time{}
+}
+
 func (r *Reconciler) executeUpdateStatus(ctx context.Context,
 	healthEvent model.HealthEventWithStatus, event datastore.Event, database queue.DataStore) error {
 	nodeName := healthEvent.HealthEvent.NodeName
 	podsEvictionStatus := &healthEvent.HealthEventStatus.UserPodsEvictionStatus
 	podsEvictionStatus.Status = model.StatusSucceeded
 
-	if receivedAtRaw, ok := event["_received_at"]; ok {
-		if receivedAtUnix, ok := receivedAtRaw.(int64); ok {
-			receivedAt := time.Unix(receivedAtUnix, 0)
-			evictionDuration := time.Since(receivedAt).Seconds()
-			metrics.PodEvictionDuration.Observe(evictionDuration)
-		} else {
-			slog.Warn("Invalid type for _received_at timestamp", "node", nodeName)
-		}
+	receivedAt := extractReceivedAtTimestamp(event)
+
+	evictionDuration := metricsutil.CalculateDurationSeconds(receivedAt)
+	if evictionDuration > 0 {
+		metrics.PodEvictionDuration.Observe(evictionDuration)
 	}
 
 	if _, err := r.Config.StateManager.UpdateNVSentinelStateNodeLabel(ctx,
