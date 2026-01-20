@@ -131,6 +131,8 @@ func (r *Reconciler) PreprocessAndEnqueueEvent(ctx context.Context, event client
 		return fmt.Errorf("failed to unmarshal event document: %w", err)
 	}
 
+	document["_received_at"] = time.Now().Unix()
+
 	// Extract health event with status
 	healthEventWithStatus := model.HealthEventWithStatus{}
 	if err := unmarshalGenericEvent(document, &healthEventWithStatus); err != nil {
@@ -513,6 +515,16 @@ func (r *Reconciler) executeUpdateStatus(ctx context.Context,
 	nodeName := healthEvent.HealthEvent.NodeName
 	podsEvictionStatus := &healthEvent.HealthEventStatus.UserPodsEvictionStatus
 	podsEvictionStatus.Status = model.StatusSucceeded
+
+	if receivedAtRaw, ok := event["_received_at"]; ok {
+		if receivedAtUnix, ok := receivedAtRaw.(int64); ok {
+			receivedAt := time.Unix(receivedAtUnix, 0)
+			evictionDuration := time.Since(receivedAt).Seconds()
+			metrics.PodEvictionDuration.Observe(evictionDuration)
+		} else {
+			slog.Warn("Invalid type for _received_at timestamp", "node", nodeName)
+		}
+	}
 
 	if _, err := r.Config.StateManager.UpdateNVSentinelStateNodeLabel(ctx,
 		nodeName, statemanager.DrainSucceededLabelValue, false); err != nil {

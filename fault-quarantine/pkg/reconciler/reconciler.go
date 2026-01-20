@@ -795,7 +795,9 @@ func (r *Reconciler) applyQuarantine(
 
 	slog.Debug("QuarantineNodeAndSetAnnotations completed successfully", "node", event.HealthEvent.NodeName)
 
-	r.updateQuarantineMetrics(event.HealthEvent.NodeName, taintsToBeApplied, isCordoned)
+	r.updateQuarantineMetrics(event.HealthEvent.NodeName,
+		event.HealthEvent.GeneratedTimestamp.AsTime(),
+		taintsToBeApplied, isCordoned)
 
 	status := model.Quarantined
 
@@ -828,6 +830,7 @@ func (r *Reconciler) addHealthEventAnnotation(
 // updateQuarantineMetrics updates Prometheus metrics after quarantining a node
 func (r *Reconciler) updateQuarantineMetrics(
 	nodeName string,
+	generatedTimestamp time.Time,
 	taintsToBeApplied []config.Taint,
 	isCordoned *atomic.Bool,
 ) {
@@ -840,6 +843,7 @@ func (r *Reconciler) updateQuarantineMetrics(
 
 	if isCordoned.Load() {
 		metrics.CordonsApplied.Inc()
+		metrics.RecordNodeCordonDuration(nodeName, generatedTimestamp)
 	}
 }
 

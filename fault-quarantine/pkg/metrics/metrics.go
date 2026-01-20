@@ -15,6 +15,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -123,6 +125,15 @@ var (
 		},
 	)
 
+	// Node Cordon Duration Metrics
+	NodeCordonDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "fault_quarantine_node_cordon_duration_seconds",
+			Help:    "Time from health event generation to node cordon completion.",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600}, // 1s to 1 hour
+		},
+	)
+
 	// Event Processing Metrics
 	EventBacklogSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -176,4 +187,9 @@ func SetFaultQuarantineBreakerUtilization(utilization float64) {
 func SetFaultQuarantineBreakerState(state string) {
 	FaultQuarantineBreakerState.Reset()
 	FaultQuarantineBreakerState.WithLabelValues(state).Set(1)
+}
+
+// RecordNodeCordonDuration records the time from health event generation to node cordon completion
+func RecordNodeCordonDuration(nodeName string, generatedTimestamp time.Time) {
+	NodeCordonDuration.Observe(time.Since(generatedTimestamp).Seconds())
 }

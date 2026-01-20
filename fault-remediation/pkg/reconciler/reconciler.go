@@ -52,7 +52,8 @@ type ReconcilerConfig struct {
 }
 
 type HealthEventDoc struct {
-	ID                          string `json:"_id"`
+	ID                          string    `json:"_id"`
+	ReceivedAt                  time.Time `json:"-"`
 	model.HealthEventWithStatus `json:",inline"`
 }
 
@@ -109,6 +110,8 @@ func (r *FaultRemediationReconciler) Reconcile(
 	}()
 
 	totalEventsReceived.Inc()
+
+	event.Event["_received_at"] = start.Unix()
 
 	healthEventWithStatus, err := r.parseHealthEvent(*event, r.Watcher)
 	if err != nil {
@@ -237,6 +240,9 @@ func (r *FaultRemediationReconciler) performRemediation(
 
 	if !success {
 		processingErrors.WithLabelValues("cr_creation_failed", nodeName).Inc()
+	} else {
+		crGenerationDuration.Observe(
+			time.Since(healthEventWithStatus.ReceivedAt).Seconds())
 	}
 
 	// Update final state based on success/failure
@@ -528,6 +534,13 @@ func (r *FaultRemediationReconciler) parseHealthEvent(eventWithToken datastore.E
 
 	result.ID = documentID
 	result.HealthEventWithStatus = healthEventWithStatus
+
+	// Extract _received_at timestamp if present (added by Reconcile() for metrics)
+	if receivedAtRaw, ok := eventWithToken.Event["_received_at"]; ok {
+		if receivedAtUnix, ok := receivedAtRaw.(int64); ok {
+			result.ReceivedAt = time.Unix(receivedAtUnix, 0)
+		}
+	}
 
 	return result, nil
 }

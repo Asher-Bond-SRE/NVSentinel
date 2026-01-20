@@ -101,6 +101,31 @@ var (
 		},
 	)
 
+	// PodEvictionDuration tracks time to successfully evict all pods from a node
+	PodEvictionDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name: "node_drainer_pod_eviction_duration_seconds",
+			Help: "Time from event receipt by node-drainer to successful pod eviction completion.",
+			Buckets: []float64{
+				60,      // 1 minute
+				300,     // 5 minutes
+				900,     // 15 minutes
+				1800,    // 30 minutes
+				3600,    // 1 hour
+				10800,   // 3 hours
+				21600,   // 6 hours
+				43200,   // 12 hours
+				86400,   // 1 day
+				259200,  // 3 days
+				604800,  // 7 days
+				1296000, // 15 days
+				2592000, // 30 days
+				5184000, // 60 days
+				7776000, // 90 days
+			},
+		},
+	)
+
 	// QueueDepth tracks the total number of pending events in the queue
 	QueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
