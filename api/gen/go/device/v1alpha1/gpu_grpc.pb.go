@@ -33,9 +33,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GpuService_GetGpu_FullMethodName    = "/nvidia.nvsentinel.v1alpha1.GpuService/GetGpu"
-	GpuService_ListGpus_FullMethodName  = "/nvidia.nvsentinel.v1alpha1.GpuService/ListGpus"
-	GpuService_WatchGpus_FullMethodName = "/nvidia.nvsentinel.v1alpha1.GpuService/WatchGpus"
+	GpuService_GetGpu_FullMethodName    = "/nvidia.device.v1alpha1.GpuService/GetGpu"
+	GpuService_ListGpus_FullMethodName  = "/nvidia.device.v1alpha1.GpuService/ListGpus"
+	GpuService_WatchGpus_FullMethodName = "/nvidia.device.v1alpha1.GpuService/WatchGpus"
 )
 
 // GpuServiceClient is the client API for GpuService service.
@@ -202,7 +202,7 @@ type GpuService_WatchGpusServer = grpc.ServerStreamingServer[WatchGpusResponse]
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var GpuService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "nvidia.nvsentinel.v1alpha1.GpuService",
+	ServiceName: "nvidia.device.v1alpha1.GpuService",
 	HandlerType: (*GpuServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
