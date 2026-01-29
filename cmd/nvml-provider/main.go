@@ -136,11 +136,11 @@ func NewProvider(cfg Config, logger klog.Logger) *Provider {
 }
 
 func main() {
-	cfg := parseFlags()
-
-	// Initialize logging
+	// Initialize logging flags first
 	klog.InitFlags(nil)
-	flag.Parse()
+
+	cfg := parseFlags()
+	// flag.Parse() is called inside parseFlags()
 
 	logger := klog.Background()
 	logger.Info("Starting NVML provider sidecar",
@@ -186,7 +186,10 @@ func parseFlags() Config {
 	flag.IntVar(&cfg.HealthCheckPort, "health-port", cfg.HealthCheckPort,
 		"HTTP port for health check endpoints")
 
-	// Check environment variables as fallback
+	// Parse flags
+	flag.Parse()
+
+	// Check environment variables as fallback (override flags if set)
 	if addr := os.Getenv("PROVIDER_SERVER_ADDRESS"); addr != "" {
 		cfg.ServerAddress = addr
 	}
