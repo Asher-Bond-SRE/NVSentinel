@@ -365,18 +365,6 @@ verify_gpu_registration() {
 
     pause
 
-    step "Query GPUs via the API (using kubectl exec with grpcurl)"
-    info "Installing grpcurl in pod for testing..."
-
-    # Use the metrics endpoint to verify the server is working
-    step "Check metrics endpoint for registered GPUs"
-    run_cmd kubectl --kubeconfig="${KUBECONFIG}" -n "${NAMESPACE}" exec "${POD}" -c device-api-server -- \
-        wget -qO- http://localhost:8081/metrics | grep -E "^(device_api|nvml)" | head -20 || {
-        info "Trying curl instead..."
-        run_cmd kubectl --kubeconfig="${KUBECONFIG}" -n "${NAMESPACE}" exec "${POD}" -c device-api-server -- \
-            curl -s http://localhost:8081/metrics | grep -E "^(device_api|nvml)" | head -20 || true
-    }
-
     pause
 }
 
