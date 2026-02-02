@@ -139,7 +139,14 @@ func (c *FaultQuarantineClient) UpdateNode(ctx context.Context, nodeName string,
 
 	defer mu.(*sync.Mutex).Unlock()
 
-	return retry.OnError(retry.DefaultBackoff, errors.IsConflict, func() error {
+	backoff := wait.Backoff{
+		Steps:    10,                    // Increased from default 5
+		Duration: 20 * time.Millisecond, // Increased from default 10ms
+		Factor:   2.0,
+		Jitter:   0.1,
+	}
+
+	return retry.OnError(backoff, errors.IsConflict, func() error {
 		node, err := c.Clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 		if err != nil {
 			return err

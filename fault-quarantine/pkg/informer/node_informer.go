@@ -163,7 +163,9 @@ func (ni *NodeInformer) GetNodeCounts() (totalNodes int, quarantinedNodesMap map
 	for _, obj := range quarantinedObjs {
 		if node, ok := obj.(*v1.Node); ok {
 			// verify if node is quarantined and has stale annotation
-			if node.Annotations[common.QuarantineHealthEventIsCordonedAnnotationKey] == common.QuarantineHealthEventIsCordonedAnnotationValueTrue && !node.Spec.Unschedulable {
+			isCordonedAnnotation := node.Annotations[common.QuarantineHealthEventIsCordonedAnnotationKey]
+			if isCordonedAnnotation == common.QuarantineHealthEventIsCordonedAnnotationValueTrue &&
+				!node.Spec.Unschedulable {
 				nodesWithStaleAnnotations = append(nodesWithStaleAnnotations, node.Name)
 				slog.Warn("Detected node with stale quarantine annotation",
 					"node", node.Name,
