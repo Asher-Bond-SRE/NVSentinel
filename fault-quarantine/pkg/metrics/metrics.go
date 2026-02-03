@@ -65,7 +65,15 @@ var (
 	TotalNodesManuallyUncordoned = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "fault_quarantine_nodes_manually_uncordoned_total",
-			Help: "Total number of manually uncordons for nodes.",
+			Help: "Total number of nodes manually uncordoned.",
+		},
+		[]string{"node"},
+	)
+
+	TotalNodesManuallyUntainted = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "fault_quarantine_nodes_manually_untainted_total",
+			Help: "Total number of nodes manually untainted",
 		},
 		[]string{"node"},
 	)

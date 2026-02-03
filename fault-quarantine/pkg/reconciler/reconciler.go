@@ -159,11 +159,6 @@ func (r *Reconciler) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := r.cleanupStaleStateOnStartup(ctx); err != nil {
-		slog.Error("Failed to cleanup stale state from node", "error", err)
-		return fmt.Errorf("failed to cleanup stale state from node: %w", err)
-	}
-
 	changeStreamWatcher, err := datastoreAdapter.CreateChangeStreamWatcher(
 		ctx, "fault-quarantine", r.config.DatabasePipeline)
 	if err != nil {
@@ -189,6 +184,11 @@ func (r *Reconciler) Start(ctx context.Context) error {
 		time.Second*30, // 30 second metric update interval
 		r,              // Reconciler implements LastProcessedObjectIDStore interface
 	)
+
+	if err := r.cleanupStaleStateOnStartup(); err != nil {
+		slog.Error("Failed to cleanup stale state from node", "error", err)
+		return fmt.Errorf("failed to cleanup stale state from node: %w", err)
+	}
 
 	r.setupNodeInformerCallbacks()
 
@@ -246,6 +246,7 @@ func (r *Reconciler) setupNodeInformerCallbacks() {
 	})
 
 	r.k8sClient.NodeInformer.SetOnManualUncordonCallback(r.handleManualUncordon)
+	r.k8sClient.NodeInformer.SetOnManualUntaintCallback(r.handleManualUntaint)
 }
 
 // initializeRuleSetEvaluators initializes all rule set evaluators from config
@@ -328,7 +329,7 @@ func (r *Reconciler) initializeQuarantineMetrics() {
 		"quarantinedNodesMap", quarantinedNodesMap)
 }
 
-func (r *Reconciler) cleanupStaleStateOnStartup(ctx context.Context) error {
+func (r *Reconciler) cleanupStaleStateOnStartup() error {
 	nodes, err := r.k8sClient.NodeInformer.ListNodes()
 	if err != nil {
 		slog.Error("Failed to list nodes for stale annotation cleanup", "error", err)
@@ -336,161 +337,68 @@ func (r *Reconciler) cleanupStaleStateOnStartup(ctx context.Context) error {
 	}
 
 	for _, node := range nodes {
-		_, hasCordonAnnotation := node.Annotations[common.QuarantineHealthEventIsCordonedAnnotationKey]
-
-		if hasCordonAnnotation && !node.Spec.Unschedulable {
-			if err := r.cleanupStaleCordonAnnotations(ctx, node); err != nil {
-				return err
-			}
-		}
-
-		if _, exists := node.Annotations[common.QuarantineHealthEventAppliedTaintsAnnotationKey]; exists {
-			if err := r.cleanupStaleTaints(ctx, node); err != nil {
-				return err
-			}
+		if err := r.processNodeStaleState(node); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func (r *Reconciler) cleanupStaleCordonAnnotations(ctx context.Context, node *corev1.Node) error {
-	slog.Info("Cleaning up stale quarantine annotations on uncordoned node",
-		"node", node.Name,
-		"quarantineHealthEvent", node.Annotations[common.QuarantineHealthEventAnnotationKey])
+func (r *Reconciler) processNodeStaleState(node *corev1.Node) error {
+	_, hasCordonAnnotation := node.Annotations[common.QuarantineHealthEventIsCordonedAnnotationKey]
 
-	if err := r.cleanupStaleQuarantineState(ctx, node.Name); err != nil {
-		slog.Error("Failed to cleanup stale annotations", "node", node.Name, "error", err)
-		metrics.ProcessingErrors.WithLabelValues("stale_annotation_cleanup_error").Inc()
-
-		return fmt.Errorf("failed to cleanup stale annotations: %w", err)
+	if hasCordonAnnotation && !node.Spec.Unschedulable {
+		return r.handleManualUncordon(node.Name)
 	}
 
-	slog.Info("Successfully cleaned up stale annotations", "node", node.Name)
+	taintsStr, exists := node.Annotations[common.QuarantineHealthEventAppliedTaintsAnnotationKey]
+	if !exists || taintsStr == "" {
+		return nil
+	}
 
-	return nil
+	return r.checkAndHandleManualUntaint(node, taintsStr)
 }
 
-func (r *Reconciler) cleanupStaleTaints(ctx context.Context, node *corev1.Node) error {
-	// Check if taints in QuarantineHealthEventAppliedTaintsAnnotationKey are still on node
-	// If not present, that means we have stale annotations that need to be cleaned up
-	taintsApplied := []config.Taint{}
-	taintAnnotationValue := node.Annotations[common.QuarantineHealthEventAppliedTaintsAnnotationKey]
+func (r *Reconciler) checkAndHandleManualUntaint(node *corev1.Node, taintsStr string) error {
+	var expectedTaints []config.Taint
 
-	if err := json.Unmarshal([]byte(taintAnnotationValue), &taintsApplied); err != nil {
-		slog.Error("Failed to unmarshal taints", "node", node.Name, "error", err)
-		return fmt.Errorf("failed to unmarshal taints: %w", err)
+	if err := json.Unmarshal([]byte(taintsStr), &expectedTaints); err != nil {
+		slog.Debug("Failed to unmarshal taints annotation during stale state check",
+			"node", node.Name, "error", err)
+
+		return nil
 	}
 
-	actualTaintsMap := make(map[string]bool)
+	// Check if any expected taints are missing from the node
+	isTaintRemoved := false
 
-	for _, taint := range node.Spec.Taints {
-		key := fmt.Sprintf("%s=%s:%s", taint.Key, taint.Value, string(taint.Effect))
-		actualTaintsMap[key] = true
-	}
-
-	// Check if all expected taints from the annotation are still present on the node
-	isStale := false
-
-	for _, expectedTaint := range taintsApplied {
-		expectedKey := fmt.Sprintf("%s=%s:%s", expectedTaint.Key, expectedTaint.Value, expectedTaint.Effect)
-
-		if !actualTaintsMap[expectedKey] {
-			// Expected taint is missing -> STALE
-			isStale = true
-
-			slog.Debug("Node has stale taint annotation, expected taint missing",
-				"node", node.Name,
-				"missingTaint", expectedKey)
-
+	for _, expectedTaint := range expectedTaints {
+		if !r.isTaintPresent(node, expectedTaint) {
+			isTaintRemoved = true
 			break
 		}
 	}
 
-	if isStale {
-		slog.Info("Cleaning up stale quarantine taints on node",
-			"node", node.Name,
-			"quarantineHealthEvent", node.Annotations[common.QuarantineHealthEventAnnotationKey])
+	if isTaintRemoved {
+		slog.Info("Detected stale taint state at startup", "node", node.Name)
 
-		if err := r.cleanupStaleQuarantineState(ctx, node.Name); err != nil {
-			slog.Error("Failed to cleanup stale taints", "node", node.Name, "error", err)
-			metrics.ProcessingErrors.WithLabelValues("stale_taint_cleanup_error").Inc()
-
-			return fmt.Errorf("failed to cleanup stale taints: %w", err)
-		}
-
-		slog.Info("Successfully cleaned up stale taints", "node", node.Name)
+		return r.handleManualUntaint(node.Name)
 	}
 
 	return nil
 }
 
-func (r *Reconciler) cleanupStaleQuarantineState(ctx context.Context, nodeName string) error {
-	node, err := r.k8sClient.NodeInformer.GetNode(nodeName)
-	if err != nil {
-		return fmt.Errorf("failed to get node %s for stale cleanup: %w", nodeName, err)
-	}
-
-	// Parse taints from annotation to check which ones are actually present
-	var taintsFromAnnotation []config.Taint
-
-	taintsStr, exists := node.Annotations[common.QuarantineHealthEventAppliedTaintsAnnotationKey]
-
-	if exists && taintsStr != "" {
-		if err := json.Unmarshal([]byte(taintsStr), &taintsFromAnnotation); err != nil {
-			slog.Error("Failed to unmarshal taints during stale cleanup",
-				"node", nodeName, "error", err)
-		} else {
-			slog.Debug("Parsed taints from annotation during stale cleanup",
-				"node", nodeName, "taintCount", len(taintsFromAnnotation))
+func (r *Reconciler) isTaintPresent(node *corev1.Node, expectedTaint config.Taint) bool {
+	for _, actualTaint := range node.Spec.Taints {
+		if actualTaint.Key == expectedTaint.Key &&
+			actualTaint.Value == expectedTaint.Value &&
+			string(actualTaint.Effect) == expectedTaint.Effect {
+			return true
 		}
 	}
 
-	taintsToRemove := []config.Taint{}
-
-	if len(taintsFromAnnotation) > 0 {
-		actualTaintsMap := make(map[config.Taint]bool)
-
-		for _, taint := range node.Spec.Taints {
-			key := config.Taint{Key: taint.Key, Value: taint.Value, Effect: string(taint.Effect)}
-			actualTaintsMap[key] = true
-		}
-
-		for _, taint := range taintsFromAnnotation {
-			if actualTaintsMap[taint] {
-				taintsToRemove = append(taintsToRemove, taint)
-			}
-		}
-	}
-
-	annotationsToRemove := []string{
-		common.QuarantineHealthEventAnnotationKey,
-		common.QuarantineHealthEventAppliedTaintsAnnotationKey,
-		common.QuarantineHealthEventIsCordonedAnnotationKey,
-		common.QuarantinedNodeUncordonedManuallyAnnotationKey,
-	}
-
-	labelsToRemove := []string{
-		statemanager.NVSentinelStateLabelKey,
-	}
-
-	if err := r.k8sClient.UnQuarantineNodeAndRemoveAnnotations(
-		ctx,
-		nodeName,
-		taintsToRemove,
-		annotationsToRemove,
-		labelsToRemove,
-		map[string]string{},
-	); err != nil {
-		return fmt.Errorf("failed to cleanup stale quarantine state for node %s: %w", nodeName, err)
-	}
-
-	slog.Info("Removed stale quarantine annotations, taints, and labels",
-		"node", nodeName,
-		"taintsFromAnnotation", len(taintsFromAnnotation),
-		"taintsActuallyRemoved", len(taintsToRemove))
-
-	return nil
+	return false
 }
 
 // checkCircuitBreakerAtStartup checks if circuit breaker is tripped at startup
@@ -1558,6 +1466,87 @@ func (r *Reconciler) handleManualUncordon(nodeName string) error {
 	}
 
 	slog.Info("Successfully completed manual uncordon handling", "node", nodeName)
+
+	return nil
+}
+
+// handleManualUntaint handles the case when a node is manually untainted while having FQ annotations
+func (r *Reconciler) handleManualUntaint(nodeName string) error {
+	annotations, err := r.getNodeQuarantineAnnotations(nodeName)
+	if err != nil {
+		slog.Error("Failed to get node annotations", "node", nodeName, "error", err)
+		return fmt.Errorf("failed to get annotations for manually untainted node %s: %w", nodeName, err)
+	}
+
+	slog.Debug("Retrieved node annotations for manual untaint", "node", nodeName, "annotationCount", len(annotations))
+
+	annotationsToRemove := []string{}
+
+	var taintsToRemove []config.Taint
+
+	taintsKey := common.QuarantineHealthEventAppliedTaintsAnnotationKey
+	if taintsStr, exists := annotations[taintsKey]; exists && taintsStr != "" {
+		annotationsToRemove = append(annotationsToRemove, taintsKey)
+
+		if err := json.Unmarshal([]byte(taintsStr), &taintsToRemove); err != nil {
+			slog.Error("Failed to unmarshal taints", "node", nodeName, "error", err)
+			return fmt.Errorf("failed to unmarshal taints for manually untainted node %s: %w", nodeName, err)
+		}
+
+		slog.Debug("Parsed taints to remove", "node", nodeName, "taintCount", len(taintsToRemove))
+	}
+
+	if _, exists := annotations[common.QuarantineHealthEventAnnotationKey]; exists {
+		annotationsToRemove = append(annotationsToRemove, common.QuarantineHealthEventAnnotationKey)
+	}
+
+	if _, exists := annotations[common.QuarantineHealthEventIsCordonedAnnotationKey]; exists {
+		annotationsToRemove = append(annotationsToRemove, common.QuarantineHealthEventIsCordonedAnnotationKey)
+	}
+
+	slog.Debug("Prepared annotations to remove", "node", nodeName, "count", len(annotationsToRemove))
+
+	newAnnotations := map[string]string{
+		common.QuarantinedNodeIsUntaintedManuallyAnnotationKey: common.QuarantinedNodeIsUntaintedManuallyAnnotationValue,
+	}
+
+	ctx := context.Background()
+
+	if err := r.k8sClient.HandleManualUntaintCleanup(
+		ctx,
+		nodeName,
+		taintsToRemove,
+		annotationsToRemove,
+		newAnnotations,
+		[]string{statemanager.NVSentinelStateLabelKey},
+	); err != nil {
+		slog.Error("Failed to clean up manually untainted node", "node", nodeName, "error", err)
+		metrics.ProcessingErrors.WithLabelValues("manual_untaint_cleanup_error").Inc()
+
+		return fmt.Errorf("failed to clean up manually untainted node %s: %w", nodeName, err)
+	}
+
+	slog.Debug("Successfully completed K8s cleanup for manual untaint", "node", nodeName)
+
+	// Reset the quarantine gauge metric since the node is no longer quarantined
+	metrics.CurrentQuarantinedNodes.WithLabelValues(nodeName).Set(0)
+	metrics.TotalNodesManuallyUntainted.WithLabelValues(nodeName).Inc()
+	slog.Info("Set currentQuarantinedNodes to 0 after manual untaint", "node", nodeName)
+
+	// Cancel latest quarantining events (if eventWatcher is available)
+	if r.eventWatcher != nil {
+		slog.Debug("Calling CancelLatestQuarantiningEvents for manual untaint", "node", nodeName)
+
+		if err := r.eventWatcher.CancelLatestQuarantiningEvents(ctx, nodeName); err != nil {
+			slog.Error("Failed to cancel latest quarantining events for manually untainted node",
+				"node", nodeName, "error", err)
+			metrics.ProcessingErrors.WithLabelValues("mongodb_cancel_quarantine_error").Inc()
+		} else {
+			slog.Debug("Successfully cancelled latest quarantining events", "node", nodeName)
+		}
+	}
+
+	slog.Info("Successfully completed manual untaint handling", "node", nodeName)
 
 	return nil
 }

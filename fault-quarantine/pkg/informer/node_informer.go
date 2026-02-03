@@ -16,6 +16,7 @@ package informer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/nvidia/nvsentinel/fault-quarantine/pkg/common"
+	"github.com/nvidia/nvsentinel/fault-quarantine/pkg/config"
 )
 
 const (
@@ -46,6 +48,9 @@ type NodeInformer struct {
 
 	// onManualUncordon is called when a node is manually uncordoned while having FQ annotations
 	onManualUncordon func(nodeName string) error
+
+	// onManualUntaint is called when a node is manually untainted while having FQ annotations
+	onManualUntaint func(nodeName string) error
 }
 
 // Lister returns the informer's node lister.
@@ -241,9 +246,79 @@ func (ni *NodeInformer) detectAndHandleManualUncordon(oldNode, newNode *v1.Node)
 	return true
 }
 
-// handleUpdateNode detects and handles manual uncordon of quarantined nodes.
+// detectAndHandleManualUntaint checks if a node was manually untainted and handles it
+func (ni *NodeInformer) detectAndHandleManualUntaint(oldNode, newNode *v1.Node) bool {
+	// Check if node has FQ taint annotation
+	taintsAnnotation, hasTaintsAnnotation := newNode.Annotations[common.QuarantineHealthEventAppliedTaintsAnnotationKey]
+	if !hasTaintsAnnotation || taintsAnnotation == "" {
+		return false
+	}
+
+	slog.Debug("Node has FQ taints annotation", "node", newNode.Name)
+
+	// Parse expected taints from annotation
+	var expectedTaints []config.Taint
+	if err := json.Unmarshal([]byte(taintsAnnotation), &expectedTaints); err != nil {
+		slog.Error("Failed to unmarshal taints annotation during manual untaint detection",
+			"node", newNode.Name, "error", err)
+
+		return false
+	}
+
+	// Check if any expected FQ taint was REMOVED in this update
+	// Must have been present in oldNode and now missing in newNode
+	taintWasRemoved := false
+
+	for _, expectedTaint := range expectedTaints {
+		wasPresentBefore := hasTaint(oldNode, expectedTaint)
+		isPresentNow := hasTaint(newNode, expectedTaint)
+
+		if wasPresentBefore && !isPresentNow {
+			taintWasRemoved = true
+
+			slog.Debug("FQ taint was removed from node",
+				"node", newNode.Name,
+				"removedTaint", fmt.Sprintf("%s=%s:%s", expectedTaint.Key, expectedTaint.Value, expectedTaint.Effect))
+
+			break
+		}
+	}
+
+	// If no taint was actually removed in this update, don't trigger
+	if !taintWasRemoved {
+		return false
+	}
+
+	slog.Info("Detected manual untaint of FQ-quarantined node", "node", newNode.Name)
+
+	if ni.onManualUntaint != nil {
+		slog.Debug("Invoking manual untaint callback", "node", newNode.Name)
+
+		if err := ni.onManualUntaint(newNode.Name); err != nil {
+			slog.Error("Manual untaint callback failed", "node", newNode.Name, "error", err)
+		} else {
+			slog.Debug("Manual untaint callback completed successfully", "node", newNode.Name)
+		}
+	} else {
+		msg := "Manual untaint callback is NOT REGISTERED - manual untaint will NOT be handled!"
+		slog.Warn(msg, "node", newNode.Name)
+	}
+
+	return true
+}
+
+// handleUpdateNode detects and handles manual uncordon and manual untaint of quarantined nodes.
 func (ni *NodeInformer) handleUpdateNode(oldNode, newNode *v1.Node) {
-	ni.detectAndHandleManualUncordon(oldNode, newNode)
+	// Check manual uncordon first - if it triggers, it does full cleanup including taints
+	handledByUncordon := ni.detectAndHandleManualUncordon(oldNode, newNode)
+
+	// Only check manual untaint if uncordon didn't already handle it
+	// This prevents double-handling when operator removes both cordon and taints simultaneously
+	if !handledByUncordon {
+		ni.detectAndHandleManualUntaint(oldNode, newNode)
+	} else {
+		slog.Debug("Skipping manual untaint detection - already handled by manual uncordon", "node", newNode.Name)
+	}
 }
 
 // SetOnQuarantinedNodeDeletedCallback sets the callback function for when a quarantined node is deleted
@@ -254,6 +329,11 @@ func (ni *NodeInformer) SetOnQuarantinedNodeDeletedCallback(callback func(nodeNa
 // SetOnManualUncordonCallback sets the callback function for when a node is manually uncordoned
 func (ni *NodeInformer) SetOnManualUncordonCallback(callback func(nodeName string) error) {
 	ni.onManualUncordon = callback
+}
+
+// SetOnManualUntaintCallback sets the callback function for when a node is manually untainted
+func (ni *NodeInformer) SetOnManualUntaintCallback(callback func(nodeName string) error) {
+	ni.onManualUntaint = callback
 }
 
 // handleDeleteNode handles node deletion events.
@@ -288,4 +368,17 @@ func (ni *NodeInformer) handleDeleteNode(obj interface{}) {
 	if hadQuarantineAnnotation && ni.onQuarantinedNodeDeleted != nil {
 		ni.onQuarantinedNodeDeleted(node.Name)
 	}
+}
+
+// hasTaint checks if a node has a specific taint
+func hasTaint(node *v1.Node, expectedTaint config.Taint) bool {
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == expectedTaint.Key &&
+			taint.Value == expectedTaint.Value &&
+			string(taint.Effect) == expectedTaint.Effect {
+			return true
+		}
+	}
+
+	return false
 }

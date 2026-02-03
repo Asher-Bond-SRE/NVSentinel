@@ -312,12 +312,15 @@ func setupE2EReconcilerWithOptions(t *testing.T, ctx context.Context, cfg E2ERec
 
 	r := NewReconciler(reconcilerCfg, fqClient, cb)
 
-	r.cleanupStaleStateOnStartup(ctx)
+	r.cleanupStaleStateOnStartup()
 
 	if cfg.TomlConfig.LabelPrefix != "" {
 		r.SetLabelKeys(cfg.TomlConfig.LabelPrefix)
 		fqClient.SetLabelKeys(r.cordonedReasonLabelKey, r.uncordonedReasonLabelKey)
 	}
+
+	fqClient.NodeInformer.SetOnManualUncordonCallback(r.handleManualUncordon)
+	fqClient.NodeInformer.SetOnManualUntaintCallback(r.handleManualUntaint)
 
 	// Build rulesets config (mimics reconciler.Start())
 	rulesetsConfig := rulesetsConfig{
@@ -341,9 +344,6 @@ func setupE2EReconcilerWithOptions(t *testing.T, ctx context.Context, cfg E2ERec
 	r.precomputeTaintInitKeys(ruleSetEvals, rulesetsConfig)
 
 	r.initializeQuarantineMetrics()
-
-	// Setup manual uncordon callback
-	fqClient.NodeInformer.SetOnManualUncordonCallback(r.handleManualUncordon)
 
 	// Create mock watcher
 	mockWatcher := testutils.NewMockChangeStreamWatcher()
@@ -4660,6 +4660,102 @@ func TestE2E_ManualUncordonWithMissingMongoDoc(t *testing.T) {
 	t.Log("Verifying metrics are correctly updated despite missing MongoDB document")
 	afterManualUncordon := getCounterVecValue(t, metrics.TotalNodesManuallyUncordoned, nodeName)
 	assert.Equal(t, beforeManualUncordon+1, afterManualUncordon, "TotalNodesManuallyUncordoned should increment")
+
+	afterCurrentQuarantined := getGaugeVecValue(t, metrics.CurrentQuarantinedNodes, nodeName)
+	assert.Equal(t, float64(0), afterCurrentQuarantined, "CurrentQuarantinedNodes should be 0")
+	assert.GreaterOrEqual(t, beforeCurrentQuarantined, float64(0), "Gauge should have been initialized before")
+}
+
+// TestE2E_ManualUntaint tests:
+// SCENARIO:
+// Node was cordoned by fault-quarantine and taints along with annotations are applied.
+// Node is manually untainted by the operator.
+// FQ should detect the manual untaint and clean up the FQ state.
+func TestE2E_ManualUntaint(t *testing.T) {
+	ctx, cancel := context.WithTimeout(e2eTestContext, 20*time.Second)
+	defer cancel()
+
+	nodeName := "test-node-" + generateShortTestID()
+
+	// Create a node with FQ annotations, taints, and cordon applied
+	annotations := map[string]string{
+		common.QuarantineHealthEventAnnotationKey:              `[{"nodeName":"` + nodeName + `","agent":"test","checkName":"test","isHealthy":false,"entitiesImpacted":[{"entityType":"GPU","entityValue":"0"}]}]`,
+		common.QuarantineHealthEventAppliedTaintsAnnotationKey: `[{"Key":"nvidia.com/gpu-xid-error","Value":"true","Effect":"NoSchedule"}]`,
+		common.QuarantineHealthEventIsCordonedAnnotationKey:    common.QuarantineHealthEventIsCordonedAnnotationValueTrue,
+	}
+
+	labels := map[string]string{
+		statemanager.NVSentinelStateLabelKey: string(statemanager.QuarantinedLabelValue),
+	}
+
+	taints := []corev1.Taint{
+		{Key: "nvidia.com/gpu-xid-error", Value: "true", Effect: "NoSchedule"},
+	}
+
+	createE2ETestNode(ctx, t, nodeName, annotations, labels, taints, true)
+	defer func() {
+		_ = e2eTestClient.CoreV1().Nodes().Delete(ctx, nodeName, metav1.DeleteOptions{})
+	}()
+
+	tomlConfig := config.TomlConfig{
+		LabelPrefix: "k8s.nvidia.com/",
+	}
+
+	// Setup reconciler to watch for manual untaint events
+	setupE2EReconciler(t, ctx, tomlConfig, nil)
+
+	// Capture metric values before manual untaint
+	beforeManualUntaint := getCounterVecValue(t, metrics.TotalNodesManuallyUntainted, nodeName)
+	beforeCurrentQuarantined := getGaugeVecValue(t, metrics.CurrentQuarantinedNodes, nodeName)
+
+	t.Log("Manually remove the taint from the node")
+	quarantinedNode, err := e2eTestClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Remove the FQ taint manually
+	updatedTaints := []corev1.Taint{}
+	for _, taint := range quarantinedNode.Spec.Taints {
+		if taint.Key != "nvidia.com/gpu-xid-error" {
+			updatedTaints = append(updatedTaints, taint)
+		}
+	}
+	quarantinedNode.Spec.Taints = updatedTaints
+
+	_, err = e2eTestClient.CoreV1().Nodes().Update(ctx, quarantinedNode, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	t.Log("Verify manual untaint is detected and FQ state cleaned up")
+	require.Eventually(t, func() bool {
+		node, err := e2eTestClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+
+		// Manual untaint annotation should be set
+		hasManualUntaintAnnotation := node.Annotations[common.QuarantinedNodeIsUntaintedManuallyAnnotationKey] == common.QuarantinedNodeIsUntaintedManuallyAnnotationValue
+
+		// FQ annotations should be cleaned up
+		_, hasQuarantineAnnotation := node.Annotations[common.QuarantineHealthEventAnnotationKey]
+		_, hasAppliedTaintsAnnotation := node.Annotations[common.QuarantineHealthEventAppliedTaintsAnnotationKey]
+		_, hasCordonedAnnotation := node.Annotations[common.QuarantineHealthEventIsCordonedAnnotationKey]
+
+		// Node should be uncordoned
+		isUncordoned := !node.Spec.Unschedulable
+
+		// State label should be removed
+		_, hasStateLabel := node.Labels[statemanager.NVSentinelStateLabelKey]
+
+		return hasManualUntaintAnnotation &&
+			!hasQuarantineAnnotation &&
+			!hasAppliedTaintsAnnotation &&
+			!hasCordonedAnnotation &&
+			isUncordoned &&
+			!hasStateLabel
+	}, eventuallyTimeout, eventuallyPollInterval, "Manual untaint should clean up FQ state and uncordon node")
+
+	t.Log("Verify metrics are correctly updated")
+	afterManualUntaint := getCounterVecValue(t, metrics.TotalNodesManuallyUntainted, nodeName)
+	assert.Equal(t, beforeManualUntaint+1, afterManualUntaint, "TotalNodesManuallyUntainted should increment")
 
 	afterCurrentQuarantined := getGaugeVecValue(t, metrics.CurrentQuarantinedNodes, nodeName)
 	assert.Equal(t, float64(0), afterCurrentQuarantined, "CurrentQuarantinedNodes should be 0")

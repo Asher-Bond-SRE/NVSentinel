@@ -502,6 +502,45 @@ func (c *FaultQuarantineClient) HandleManualUncordonCleanup(
 	return c.UpdateNode(ctx, nodename, updateFn)
 }
 
+// HandleManualUntaintCleanup atomically removes FQ annotations/taints/labels and adds manual untaint annotation
+// This is used when a node is manually untainted while having FQ quarantine state
+// Also uncordons the node to ensure full cleanup
+func (c *FaultQuarantineClient) HandleManualUntaintCleanup(
+	ctx context.Context,
+	nodename string,
+	taintsToRemove []config.Taint,
+	annotationsToRemove []string,
+	annotationsToAdd map[string]string,
+	labelsToRemove []string,
+) error {
+	updateFn := func(node *v1.Node) error {
+		// Uncordon the node if it's currently cordoned
+		if node.Spec.Unschedulable {
+			slog.Info("Uncordoning node as part of manual untaint cleanup", "node", nodename)
+
+			node.Spec.Unschedulable = false
+		}
+
+		if len(taintsToRemove) > 0 {
+			c.removeNodeTaints(node, taintsToRemove)
+		}
+
+		if len(annotationsToRemove) > 0 || len(annotationsToAdd) > 0 {
+			c.updateNodeAnnotationsForManualUncordon(node, annotationsToRemove, annotationsToAdd)
+		}
+
+		if len(labelsToRemove) > 0 {
+			for _, key := range labelsToRemove {
+				delete(node.Labels, key)
+			}
+		}
+
+		return nil
+	}
+
+	return c.UpdateNode(ctx, nodename, updateFn)
+}
+
 func (c *FaultQuarantineClient) removeNodeTaints(node *v1.Node, taintsToRemove []config.Taint) {
 	if c.DryRunMode {
 		slog.Info("DryRun mode enabled, skipping node taint removal")
