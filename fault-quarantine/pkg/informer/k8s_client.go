@@ -139,6 +139,8 @@ func (c *FaultQuarantineClient) UpdateNode(ctx context.Context, nodeName string,
 
 	defer mu.(*sync.Mutex).Unlock()
 
+	// Increased retry attempts to handle node update conflicts when multiple modules
+	// attempt concurrent updates, preventing nodes from remaining cordoned with stale annotations.
 	backoff := wait.Backoff{
 		Steps:    10,                    // Increased from default 5
 		Duration: 20 * time.Millisecond, // Increased from default 10ms
@@ -517,7 +519,6 @@ func (c *FaultQuarantineClient) HandleManualUntaintCleanup(
 		// Uncordon the node if it's currently cordoned
 		if node.Spec.Unschedulable {
 			slog.Info("Uncordoning node as part of manual untaint cleanup", "node", nodename)
-
 			node.Spec.Unschedulable = false
 		}
 
