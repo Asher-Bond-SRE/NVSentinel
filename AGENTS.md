@@ -3,10 +3,10 @@
 > **Last Updated:** 2026-02-04
 > **Active Branch:** `feat/cloud-native-healthevents` ✅ READY
 > **Base Commit:** `105cd6c` (Use cuda image from NVCR to avoid rate limits (#792))
-> **Head Commit:** `4457249` (feat: implement cloud-native GPU health event management)
+> **Head Commit:** `6288d60` (feat(tests): add HealthEvent CRD test helpers)
 > **New PR:** https://github.com/NVIDIA/NVSentinel/pull/795 (DRAFT)
 > **Old PR:** https://github.com/NVIDIA/NVSentinel/pull/794 (superseded - incorrectly based)
-> **Status:** 🔄 Phase 2: Test Infrastructure (in progress)
+> **Status:** 🔄 Phase 3: Migrate Tests (in progress - smoke_test.go)
 
 ---
 
@@ -254,6 +254,51 @@ tests/
 - [ ] Full lifecycle coverage
 - [ ] Zero MongoDB dependencies
 - [ ] Runnable on KWOK/kind and AWS EKS
+
+---
+
+## Phase 2 Results: Test Infrastructure (COMPLETE ✅)
+
+Created `tests/helpers/healthevent_crd.go` with 23 helper functions.
+
+### Builder Pattern
+```go
+event := NewHealthEventCRD("node-1").
+    WithFatal(true).
+    WithCheckName("GpuXidError").
+    WithErrorCodes("79").
+    WithRecommendedAction(nvsentinelv1alpha1.ActionRestartVM).
+    Build()
+```
+
+### CRD Operations
+- `CreateHealthEventCRD(ctx, t, c, event)` - Create CRD
+- `GetHealthEventCRD(ctx, c, name)` - Get by name
+- `DeleteHealthEventCRD(ctx, t, c, name)` - Delete
+- `ListHealthEventCRDs(ctx, c)` - List all
+- `ListHealthEventCRDsForNode(ctx, c, nodeName)` - Filter by node
+- `DeleteAllHealthEventCRDs(ctx, t, c)` - Cleanup all
+
+### Phase Waiting
+- `WaitForHealthEventPhase(ctx, t, c, name, phase)` - Wait for phase
+- `WaitForHealthEventPhaseNotEqual(ctx, t, c, name, phase)` - Wait to leave phase
+- `WaitForHealthEventCondition(ctx, t, c, name, condType, status)` - Wait for condition
+- `WaitForHealthEventPhaseSequence(ctx, t, c, name, []phases)` - Wait for sequence
+
+### Assertions
+- `AssertHealthEventPhase(t, event, phase)` - Assert phase
+- `AssertHealthEventNotExists(ctx, t, c, name)` - Assert doesn't exist
+- `AssertHealthEventHasCondition(t, event, condType, status)` - Assert condition
+- `AssertHealthEventNeverReachesPhase(ctx, t, c, name, phase)` - Assert never reaches
+- `AssertNodeQuarantinedCondition(t, event)` - Assert quarantine condition
+- `AssertPodsDrainedCondition(t, event)` - Assert drain condition
+- `AssertRemediatedCondition(t, event)` - Assert remediation condition
+- `AssertResolvedAtSet(t, event)` - Assert resolved timestamp
+
+### Migration Helpers (Old HTTP → New CRD)
+- `SendHealthEventViaCRD(ctx, t, c, template)` - Drop-in for `SendHealthEvent`
+- `SendHealthyEventViaCRD(ctx, t, c, nodeName)` - Drop-in for `SendHealthyEvent`
+- `TriggerFullRemediationFlowViaCRD(ctx, t, c, nodeName)` - Trigger full flow
 
 ---
 
