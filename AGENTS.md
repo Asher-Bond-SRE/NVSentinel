@@ -3,10 +3,10 @@
 > **Last Updated:** 2026-02-04
 > **Active Branch:** `feat/cloud-native-healthevents` ✅ READY
 > **Base Commit:** `105cd6c` (Use cuda image from NVCR to avoid rate limits (#792))
-> **Head Commit:** `3c9ad1a` (test(e2e): migrate fault_remediation_test.go to CRD-based flow)
+> **Head Commit:** `a7f3cc7` (fix(tests): register HealthEvent types and fix context keys)
 > **New PR:** https://github.com/NVIDIA/NVSentinel/pull/795 (DRAFT)
 > **Old PR:** https://github.com/NVIDIA/NVSentinel/pull/794 (superseded - incorrectly based)
-> **Status:** ✅ Phase 3: Migrate Tests COMPLETE (smoke, quarantine, drainer, remediation)
+> **Status:** ✅ Phase 4: Validation COMPLETE (controller flow verified)
 
 ---
 
@@ -316,6 +316,31 @@ New → Quarantined → Draining → Drained → Remediated → Resolved
 
 ### Deferred
 - [ ] `health_events_analyzer_test.go` - (MongoDB-specific, pattern detection)
+
+---
+
+## Phase 4 Results: Validation (COMPLETE ✅)
+
+### Manual Validation (2026-02-04)
+- **Cluster:** `kubernetes-admin@holodeck-cluster` (AWS EKS)
+- **Test Node:** `ip-10-0-0-10`
+- **Result:** SUCCESS
+
+**Validation Steps:**
+1. Built `controller-test` binary
+2. Started controllers locally (`./bin/controller-test`)
+3. Created HealthEvent CRD manually
+4. Verified phase transitions: `New → Quarantined → Draining`
+5. Verified node cordoned (`spec.unschedulable=true`)
+6. Verified `NodeQuarantined` condition set
+
+**Test Infrastructure Fixes Applied:**
+- Registered `nvsentinelv1alpha1.HealthEvent` types in test scheme
+- Moved `keyHealthEventName` context key to `main_test.go`
+- Removed unused `v1` import from `smoke_test.go`
+
+**Note:** Full E2E test suite requires KWOK nodes for `amd64_group` tests.
+The `arm64_group` tests (smoke tests) use real nodes but require longer timeout.
 
 ---
 
