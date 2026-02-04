@@ -3,10 +3,10 @@
 > **Last Updated:** 2026-02-04
 > **Active Branch:** `feat/cloud-native-healthevents` ✅ READY
 > **Base Commit:** `105cd6c` (Use cuda image from NVCR to avoid rate limits (#792))
-> **Head Commit:** `a7f0996` (test(e2e): migrate smoke_test.go to CRD-based flow)
+> **Head Commit:** `3c9ad1a` (test(e2e): migrate fault_remediation_test.go to CRD-based flow)
 > **New PR:** https://github.com/NVIDIA/NVSentinel/pull/795 (DRAFT)
 > **Old PR:** https://github.com/NVIDIA/NVSentinel/pull/794 (superseded - incorrectly based)
-> **Status:** 🔄 Phase 3: Migrate Tests (smoke_test.go ✅ - next: fault_quarantine_test.go)
+> **Status:** ✅ Phase 3: Migrate Tests COMPLETE (smoke, quarantine, drainer, remediation)
 
 ---
 
@@ -261,6 +261,23 @@ tests/
 
 ### Completed
 - [x] `smoke_test.go` - Full lifecycle tests migrated
+- [x] `fault_quarantine_test.go` - QuarantineController tests migrated
+- [x] `node_drainer_test.go` - DrainController tests migrated
+- [x] `fault_remediation_test.go` - RemediationController tests migrated
+
+### fault_quarantine_test.go Migration Summary
+
+**Migrated tests:**
+- `TestNonFatalEventDoesNotTriggerQuarantine` - Verify isFatal=false skips quarantine
+- `TestHealthyEventDoesNotTriggerQuarantine` - Verify isHealthy=true skips quarantine  
+- `TestPreCordonedNodeHandling` - Pre-cordoned nodes handled correctly
+- `TestQuarantineSkipOverride` - `spec.overrides.quarantine.skip` works
+- `TestMultipleEventsOnSameNode` - Multiple events on same node
+
+**Removed (old microservice-specific):**
+- `TestDontCordonIfEventDoesntMatchCELExpression` - CEL filtering (fault-quarantine specific)
+- `TestCircuitBreakerCursorCreateSkipsAccumulatedEvents` - Circuit breaker (MongoDB-specific)
+- `TestFaultQuarantineWithProcessingStrategy` - Processing strategy (data-models specific)
 
 ### smoke_test.go Migration Summary
 
@@ -277,11 +294,28 @@ New → Quarantined → Draining → Drained → Remediated → Resolved
 - Asserts event stays in Drained phase (never reaches Remediated)
 - Verifies no log-collector job created
 
-### Remaining
-- [ ] `fault_quarantine_test.go` - QuarantineController tests
-- [ ] `node_drainer_test.go` - DrainController tests  
-- [ ] `fault_remediation_test.go` - RemediationController tests
-- [ ] `health_events_analyzer_test.go` - (defer - MongoDB-specific)
+### node_drainer_test.go Migration Summary
+
+**Migrated tests:**
+- `TestDrainControllerBasicFlow` - Basic drain via HealthEvent phases
+- `TestDrainSkipOverride` - `spec.overrides.drain.skip` works
+- `TestDrainWithKubeSystemExclusion` - kube-system pods not evicted
+- `TestDrainPhaseSequence` - Full phase sequence validation
+
+**Removed (old microservice-specific):**
+- `TestNodeDrainerEvictionModes` - ConfigMap-based eviction mode config
+- `TestNodeDrainerPartialDrain` - Partial drain with entitiesImpacted
+
+### fault_remediation_test.go Migration Summary
+
+**Migrated tests:**
+- `TestRemediationControllerBasicFlow` - Basic remediation via phases
+- `TestMultipleRemediationsOnSameNode` - Multiple CRs on same node
+- `TestContactSupportDoesNotTriggerRemediation` - CONTACT_SUPPORT skips remediation
+- `TestFullPhaseSequenceToResolved` - Full lifecycle New → Resolved
+
+### Deferred
+- [ ] `health_events_analyzer_test.go` - (MongoDB-specific, pattern detection)
 
 ---
 
