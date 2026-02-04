@@ -22,18 +22,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 	"tests/helpers"
 
 	nvsentinelv1alpha1 "github.com/nvidia/nvsentinel/api/nvsentinel/v1alpha1"
 )
-
-// keyHealthEventName is the context key for the created HealthEvent name.
-type keyHealthEventNameType struct{}
-
-var keyHealthEventName = keyHealthEventNameType{}
 
 func TestFatalHealthEvent(t *testing.T) {
 	feature := features.New("TestFatalHealthEventEndToEnd").
