@@ -6,7 +6,7 @@
 > **Head Commit:** `4457249` (feat: implement cloud-native GPU health event management)
 > **New PR:** https://github.com/NVIDIA/NVSentinel/pull/795 (DRAFT)
 > **Old PR:** https://github.com/NVIDIA/NVSentinel/pull/794 (superseded - incorrectly based)
-> **Status:** ✅ Cherry-pick complete - 22 commits applied cleanly onto main
+> **Status:** 🔄 Phase 1: E2E Test Audit (in progress)
 
 ---
 
@@ -254,6 +254,57 @@ tests/
 - [ ] Full lifecycle coverage
 - [ ] Zero MongoDB dependencies
 - [ ] Runnable on KWOK/kind and AWS EKS
+
+---
+
+## Phase 1 Audit Results (2026-02-04)
+
+### Test Files Audited
+
+| File | Tests | Key Scenarios |
+|------|-------|---------------|
+| `smoke_test.go` | 2 | Full fatal event flow, unsupported event flow |
+| `fault_quarantine_test.go` | 4 | CEL filtering, pre-cordoned nodes, circuit breaker, processing strategy |
+| `node_drainer_test.go` | 2 | Eviction modes, partial drain |
+| `fault_remediation_test.go` | 1 | RebootNode CR creation after remediation |
+
+### Common Old → New Assertion Mapping
+
+| Old Pattern | New Pattern |
+|-------------|-------------|
+| `SendHealthEvent()` HTTP POST | Create HealthEvent CRD via K8s client |
+| MongoDB change stream watch | HealthEvent CRD informer/watch |
+| Node label `nvsentinel-state=draining` | HealthEvent `status.phase=Draining` |
+| Node label `nvsentinel-state=drain-succeeded` | HealthEvent `status.phase=Drained` |
+| `CheckNodeEventExists("NodeDraining")` | HealthEvent `status.conditions` check |
+| `WaitForRebootNodeCR()` | HealthEvent `status.phase=Remediated` |
+
+### Required New Helper Functions
+
+```go
+// CRD Operations
+CreateHealthEventCRD(ctx, client, spec) error
+GetHealthEventCRD(ctx, client, name) (*HealthEvent, error)
+DeleteHealthEventCRD(ctx, client, name) error
+ListHealthEventCRDs(ctx, client, opts) ([]HealthEvent, error)
+
+// Phase Waiting
+WaitForHealthEventPhase(ctx, client, name, phase, timeout) error
+WaitForHealthEventCondition(ctx, client, name, condType, status) error
+
+// Assertions
+AssertHealthEventPhase(t, event, expectedPhase)
+AssertHealthEventNotExists(ctx, t, client, name)
+AssertHealthEventHasCondition(t, event, condType, status)
+```
+
+### Test Migration Priority
+
+1. **High**: `smoke_test.go` - Core E2E flow, validates full lifecycle
+2. **High**: `fault_quarantine_test.go` - QuarantineController validation
+3. **Medium**: `node_drainer_test.go` - DrainController validation
+4. **Medium**: `fault_remediation_test.go` - RemediationController validation
+5. **Low**: `health_events_analyzer_test.go` - Pattern detection (defer, MongoDB-specific)
 
 ---
 
