@@ -8,6 +8,7 @@
 - [x] standardize project layout
 - [x] trim down / consolidate docs
 - [ ] development.md
+- [ ] standard conditions
 - [ ] **Go type as single-source-of-truth**
 - [ ] internal superset type
 - [ ] api validation
