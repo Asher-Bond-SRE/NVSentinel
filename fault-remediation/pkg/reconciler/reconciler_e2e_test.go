@@ -23,8 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -1742,7 +1740,12 @@ func TestMetrics_CRGenerationDuration(t *testing.T) {
 	defer cancel()
 
 	nodeName := testutils.GenerateTestNodeName("test-cr-duration")
-	createTestNode(ctx, nodeName, nil, map[string]string{"test": "label"})
+
+	nodeLabels := map[string]string{
+		"test":                               "label",
+		statemanager.NVSentinelStateLabelKey: string(statemanager.DrainSucceededLabelValue),
+	}
+	createTestNode(ctx, nodeName, nil, nodeLabels)
 	defer func() {
 		_ = testClient.CoreV1().Nodes().Delete(ctx, nodeName, metav1.DeleteOptions{})
 	}()
@@ -1757,12 +1760,15 @@ func TestMetrics_CRGenerationDuration(t *testing.T) {
 
 	beforeDuration := getHistogramCount(t, metrics.CRGenerationDuration)
 
-	t.Log("Sending quarantine event with _received_at timestamp set to 5 seconds ago")
+	t.Log("Sending quarantine event with DrainFinishTimestamp set to 5 seconds ago")
 	eventID1 := "test-event-id-1"
 	event1 := createQuarantineEvent(eventID1, nodeName, protos.RecommendedAction_RESTART_BM)
 
+	drainFinishTime := time.Now().Add(-5 * time.Second)
 	if fullDoc, ok := event1["fullDocument"].(map[string]interface{}); ok {
-		fullDoc["_received_at"] = time.Now().Add(-5 * time.Second).Unix()
+		if status, ok := fullDoc["healtheventstatus"].(map[string]interface{}); ok {
+			status["drainfinishtimestamp"] = drainFinishTime
+		}
 	}
 
 	eventToken1 := datastore.EventWithToken{

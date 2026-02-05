@@ -123,11 +123,11 @@ var (
 		},
 	)
 
-	// Node Cordon Duration Metrics
-	NodeCordonDuration = promauto.NewHistogram(
+	// Node Quarantine Duration Metrics
+	NodeQuarantineDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
-			Name:    "fault_quarantine_node_cordon_duration_seconds",
-			Help:    "Time from health event generation to node cordon completion.",
+			Name:    "fault_quarantine_node_quarantine_duration_seconds",
+			Help:    "Time from health event generation to node quarantine completion.",
 			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600}, // 1s to 1 hour
 		},
 	)

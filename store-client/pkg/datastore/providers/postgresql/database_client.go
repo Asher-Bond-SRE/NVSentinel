@@ -297,6 +297,39 @@ func (c *PostgreSQLDatabaseClient) UpdateDocumentStatus(
 	return nil
 }
 
+// UpdateDocumentStatusFields updates multiple status fields in a document in one operation.
+func (c *PostgreSQLDatabaseClient) UpdateDocumentStatusFields(
+	ctx context.Context, documentID string, fields map[string]interface{},
+) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	update := query.NewUpdate()
+	for path, value := range fields {
+		update.Set(path, value)
+		if c.tableName == "health_events" && path == "healtheventstatus.nodequarantined" {
+			update.Set("node_quarantined", value)
+		}
+	}
+	setClause, args := update.ToSQL()
+	whereClause := fmt.Sprintf("id = $%d", len(args)+1)
+	//nolint:gosec // G201: table name is controlled internally
+	q := fmt.Sprintf("UPDATE %s SET %s WHERE %s", c.tableName, setClause, whereClause)
+	args = append(args, documentID)
+	result, err := c.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return fmt.Errorf("failed to update document status fields: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("document not found: %s", documentID)
+	}
+	return nil
+}
+
 // UpdateDocument updates a single document matching the filter
 func (c *PostgreSQLDatabaseClient) UpdateDocument(
 	ctx context.Context, filter interface{}, update interface{},

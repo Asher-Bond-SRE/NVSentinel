@@ -4341,8 +4341,8 @@ func TestE2E_ConcurrentHealthyEvents_WithDelayedInformer(t *testing.T) {
 	require.Equal(t, 0, fqTaintCount, "FQ taints should be removed")
 }
 
-// TestMetrics_NodeCordonDuration verifies that NodeCordonDuration metric is recorded correctly
-func TestMetrics_NodeCordonDuration(t *testing.T) {
+// TestMetrics_NodeQuarantineDuration verifies that NodeQuarantineDuration metric is recorded correctly
+func TestMetrics_NodeQuarantineDuration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(e2eTestContext, 20*time.Second)
 	defer cancel()
 
@@ -4372,7 +4372,7 @@ func TestMetrics_NodeCordonDuration(t *testing.T) {
 
 	_, mockWatcher, _, _ := setupE2EReconciler(t, ctx, tomlConfig, nil)
 
-	beforeCordonDuration := getHistogramCount(t, metrics.NodeCordonDuration)
+	beforeQuarantineDuration := getHistogramCount(t, metrics.NodeQuarantineDuration)
 
 	t.Log("Sending unhealthy event with GeneratedTimestamp set to 5 seconds ago")
 	eventID1 := generateTestID()
@@ -4416,15 +4416,15 @@ func TestMetrics_NodeCordonDuration(t *testing.T) {
 		return node.Spec.Unschedulable && node.Annotations[common.QuarantineHealthEventAnnotationKey] != ""
 	}, eventuallyTimeout, eventuallyPollInterval, "Node should be quarantined and cordoned")
 
-	t.Log("Verifying NodeCordonDuration metric was recorded")
+	t.Log("Verifying NodeQuarantineDuration metric was recorded")
 	require.Eventually(t, func() bool {
-		afterCordonDuration := getHistogramCount(t, metrics.NodeCordonDuration)
-		return afterCordonDuration > beforeCordonDuration
-	}, statusCheckTimeout, statusCheckPollInterval, "NodeCordonDuration metric should be recorded")
+		afterQuarantineDuration := getHistogramCount(t, metrics.NodeQuarantineDuration)
+		return afterQuarantineDuration > beforeQuarantineDuration
+	}, statusCheckTimeout, statusCheckPollInterval, "NodeQuarantineDuration metric should be recorded")
 
-	afterCordonDuration := getHistogramCount(t, metrics.NodeCordonDuration)
-	assert.GreaterOrEqual(t, afterCordonDuration, beforeCordonDuration+1,
-		"NodeCordonDuration histogram should record at least one observation")
+	afterQuarantineDuration := getHistogramCount(t, metrics.NodeQuarantineDuration)
+	assert.GreaterOrEqual(t, afterQuarantineDuration, beforeQuarantineDuration+1,
+		"NodeQuarantineDuration histogram should record at least one observation")
 
-	t.Log("NodeCordonDuration metric recorded successfully")
+	t.Log("NodeQuarantineDuration metric recorded successfully")
 }

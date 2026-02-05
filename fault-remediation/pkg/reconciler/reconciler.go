@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/nvidia/nvsentinel/commons/pkg/eventutil"
-	"github.com/nvidia/nvsentinel/commons/pkg/metricsutil"
 	"github.com/nvidia/nvsentinel/commons/pkg/statemanager"
 	"github.com/nvidia/nvsentinel/data-models/pkg/model"
 	"github.com/nvidia/nvsentinel/data-models/pkg/protos"
@@ -225,11 +224,6 @@ func (r *FaultRemediationReconciler) performRemediation(ctx context.Context,
 
 		remediationLabelValue = statemanager.RemediationFailedLabelValue
 		// don't throw error yet so we can update state
-	} else {
-		duration := metricsutil.CalculateDurationSeconds(healthEventWithStatus.ReceivedAt)
-		if duration > 0 {
-			metrics.CRGenerationDuration.Observe(duration)
-		}
 	}
 
 	_, err = r.Config.StateManager.UpdateNVSentinelStateNodeLabel(ctx,

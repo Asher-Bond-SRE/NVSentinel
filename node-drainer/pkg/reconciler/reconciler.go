@@ -136,8 +136,6 @@ func (r *Reconciler) PreprocessAndEnqueueEvent(ctx context.Context, event client
 		return fmt.Errorf("failed to unmarshal event document: %w", err)
 	}
 
-	document["_received_at"] = time.Now().Unix()
-
 	// Extract health event with status
 	healthEventWithStatus := model.HealthEventWithStatus{}
 	if err := unmarshalGenericEvent(document, &healthEventWithStatus); err != nil {
@@ -516,14 +514,6 @@ func (r *Reconciler) executeMarkAlreadyDrained(ctx context.Context,
 		nodeName, metrics.DrainStatusSkipped)
 }
 
-func extractReceivedAtTimestamp(event datastore.Event) time.Time {
-	if receivedAtInt, ok := event["_received_at"].(int64); ok {
-		return time.Unix(receivedAtInt, 0)
-	}
-
-	return time.Time{}
-}
-
 func (r *Reconciler) executeUpdateStatus(ctx context.Context, healthEvent model.HealthEventWithStatus,
 	event datastore.Event, database queue.DataStore, status model.Status) error {
 	nodeName := healthEvent.HealthEvent.NodeName
@@ -535,11 +525,17 @@ func (r *Reconciler) executeUpdateStatus(ctx context.Context, healthEvent model.
 		nodeDrainLabelValue = statemanager.DrainFailedLabelValue
 	}
 
-	receivedAt := extractReceivedAtTimestamp(event)
+	if status == model.StatusSucceeded &&
+		healthEvent.HealthEventStatus.QuarantineFinishTimestamp != nil &&
+		healthEvent.HealthEventStatus.DrainFinishTimestamp == nil {
+		quarantineFinishTime := *healthEvent.HealthEventStatus.QuarantineFinishTimestamp
+		evictionDuration := metricsutil.CalculateDurationSeconds(quarantineFinishTime)
 
-	evictionDuration := metricsutil.CalculateDurationSeconds(receivedAt)
-	if evictionDuration > 0 {
-		metrics.PodEvictionDuration.Observe(evictionDuration)
+		slog.Info("Node drainer evictionDuration is", "evictionDuration", evictionDuration)
+
+		if evictionDuration > 0 {
+			metrics.PodEvictionDuration.Observe(evictionDuration)
+		}
 	}
 
 	if _, err := r.Config.StateManager.UpdateNVSentinelStateNodeLabel(ctx,
@@ -597,12 +593,18 @@ func (r *Reconciler) updateNodeUserPodsEvictedStatus(ctx context.Context, databa
 		return fmt.Errorf("failed to extract document ID: %w", err)
 	}
 
-	filter := map[string]any{"_id": documentID}
-	update := map[string]any{
-		"$set": map[string]any{
-			"healtheventstatus.userpodsevictionstatus": *userPodsEvictionStatus,
-		},
+	updateFields := map[string]any{
+		"healtheventstatus.userpodsevictionstatus": *userPodsEvictionStatus,
 	}
+
+	// Set DrainFinishTimestamp when drain completes successfully
+	if userPodsEvictionStatus.Status == model.StatusSucceeded {
+		now := time.Now().UTC()
+		updateFields["healtheventstatus.drainfinishtimestamp"] = now
+	}
+
+	filter := map[string]any{"_id": documentID}
+	update := map[string]any{"$set": updateFields}
 
 	_, err = database.UpdateDocument(ctx, filter, update)
 	if err != nil {
