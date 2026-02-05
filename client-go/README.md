@@ -39,7 +39,7 @@ import (
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/api/meta"
-    "github.com/nvidia/nvsentinel/client-go/clientset/versioned"
+    "github.com/nvidia/nvsentinel/client-go/client/versioned"
     "github.com/nvidia/nvsentinel/client-go/nvgrpc"
 )
 func main() {

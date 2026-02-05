@@ -364,8 +364,6 @@ verify_gpu_registration() {
     run_cmd kubectl --kubeconfig="${KUBECONFIG}" -n "${NAMESPACE}" logs "${POD}" -c nvml-provider --tail=20 || true
 
     pause
-
-    pause
 }
 
 demonstrate_crash_recovery() {
