@@ -55,7 +55,13 @@ func NewForConfig(c *nvgrpc.Config) (*Clientset, error) {
 		return nil, err
 	}
 
-	return NewForConfigAndClient(&configShallowCopy, conn)
+	cs, err := NewForConfigAndClient(&configShallowCopy, conn)
+	if err != nil {
+		// Close connection to prevent resource leak
+		_ = conn.Close()
+		return nil, err
+	}
+	return cs, nil
 }
 
 // NewForConfigAndClient creates a new Clientset for the given config and gRPC client connection.
