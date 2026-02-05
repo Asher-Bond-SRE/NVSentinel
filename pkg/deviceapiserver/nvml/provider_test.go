@@ -1,4 +1,4 @@
-// Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ func TestProvider_Start_Success(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -86,7 +86,7 @@ func TestProvider_Start_NVMLInitFails(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -112,7 +112,7 @@ func TestProvider_Start_NoGPUs(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -143,7 +143,7 @@ func TestProvider_Start_AlreadyStarted(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -174,7 +174,7 @@ func TestProvider_Stop(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -210,7 +210,7 @@ func TestProvider_Stop_NotStarted(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -241,7 +241,7 @@ func TestProvider_DeviceEnumeration(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -310,7 +310,7 @@ func TestProvider_DeviceEnumeration_PartialFailure(t *testing.T) {
 	provider := &Provider{
 		config:  DefaultConfig(),
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -342,7 +342,7 @@ func TestProvider_HealthCheckDisabled(t *testing.T) {
 	provider := &Provider{
 		config:  config,
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -376,7 +376,7 @@ func TestProvider_UpdateCondition(t *testing.T) {
 	provider := &Provider{
 		config:  config,
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -433,7 +433,7 @@ func TestProvider_UpdateCondition_GPUNotFound(t *testing.T) {
 	provider := &Provider{
 		config:  config,
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 
@@ -466,7 +466,7 @@ func TestProvider_MarkHealthy(t *testing.T) {
 	provider := &Provider{
 		config:  config,
 		nvmllib: mockLib,
-		cache:   gpuCache,
+		client:  newFakeClient(gpuCache),
 		logger:  testLogger(),
 	}
 

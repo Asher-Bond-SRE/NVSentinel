@@ -15,6 +15,8 @@
 package cache
 
 import (
+	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -518,5 +520,341 @@ func TestGpuCache_WriteBlocksNewReaders(t *testing.T) {
 
 	if writeIdx > read2Idx {
 		t.Errorf("Writer should execute before second reader (writer-preference). Order: %v", order)
+	}
+}
+
+func TestGpuCache_UpdateStatus_CloneSafety(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-CLONE-TEST"}
+	c.Register("gpu-clone", spec, nil, "test-provider")
+
+	status := &v1alpha1.GpuStatus{
+		Conditions: []*v1alpha1.Condition{
+			{Type: "Ready", Status: "True", Reason: "Original"},
+		},
+	}
+	_, err := c.UpdateStatus("gpu-clone", status, "test-provider")
+	if err != nil {
+		t.Fatalf("UpdateStatus failed: %v", err)
+	}
+
+	status.Conditions[0].Reason = "Mutated"
+
+	gpu, found := c.Get("gpu-clone")
+	if !found {
+		t.Fatal("GPU not found")
+	}
+	if gpu.Status.Conditions[0].Reason != "Original" {
+		t.Errorf("Cache was mutated externally: got reason=%q, want %q",
+			gpu.Status.Conditions[0].Reason, "Original")
+	}
+}
+
+func TestGpuCache_UpdateStatusWithVersion_CloneSafety(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	gpu := &v1alpha1.Gpu{
+		Metadata: &v1alpha1.ObjectMeta{Name: "gpu-clone-v"},
+		Spec:     &v1alpha1.GpuSpec{Uuid: "GPU-CLONE-V"},
+		Status:   &v1alpha1.GpuStatus{},
+	}
+	created, err := c.Create(gpu)
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	rv, _ := strconv.ParseInt(created.GetMetadata().GetResourceVersion(), 10, 64)
+
+	newStatus := &v1alpha1.GpuStatus{
+		Conditions: []*v1alpha1.Condition{
+			{Type: "Ready", Status: "True", Reason: "Original"},
+		},
+	}
+	_, err = c.UpdateStatusWithVersion("gpu-clone-v", newStatus, rv)
+	if err != nil {
+		t.Fatalf("UpdateStatusWithVersion failed: %v", err)
+	}
+
+	newStatus.Conditions[0].Reason = "Mutated"
+
+	result, found := c.Get("gpu-clone-v")
+	if !found {
+		t.Fatal("GPU not found")
+	}
+	if result.Status.Conditions[0].Reason != "Original" {
+		t.Errorf("Cache was mutated externally: got reason=%q, want %q",
+			result.Status.Conditions[0].Reason, "Original")
+	}
+}
+
+func TestGpuCache_UpdateCondition_CloneSafety(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	// Register a GPU with initial status
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-COND-CLONE"}
+	initialStatus := &v1alpha1.GpuStatus{
+		Conditions: []*v1alpha1.Condition{
+			{Type: "Ready", Status: "True", Reason: "Initial"},
+		},
+	}
+	c.Register("gpu-cond-clone", spec, initialStatus, "test-provider")
+
+	// Update an existing condition
+	cond := &v1alpha1.Condition{
+		Type: "Ready", Status: "False", Reason: "Original",
+	}
+	_, err := c.UpdateCondition("gpu-cond-clone", cond, "test-provider")
+	if err != nil {
+		t.Fatalf("UpdateCondition failed: %v", err)
+	}
+
+	// Mutate the original condition AFTER the update
+	cond.Reason = "Mutated"
+
+	// The cached GPU must NOT reflect the mutation
+	gpu, found := c.Get("gpu-cond-clone")
+	if !found {
+		t.Fatal("GPU not found")
+	}
+	for _, c := range gpu.Status.Conditions {
+		if c.Type == "Ready" && c.Reason == "Mutated" {
+			t.Error("Cache condition was mutated externally: reason should be 'Original' not 'Mutated'")
+		}
+	}
+}
+
+func TestGpuCache_UpdateCondition_AppendCloneSafety(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	// Register a GPU with no conditions
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-APPEND-CLONE"}
+	c.Register("gpu-append-clone", spec, nil, "test-provider")
+
+	// Add a new condition (append path)
+	cond := &v1alpha1.Condition{
+		Type: "NVMLReady", Status: "True", Reason: "Original",
+	}
+	_, err := c.UpdateCondition("gpu-append-clone", cond, "test-provider")
+	if err != nil {
+		t.Fatalf("UpdateCondition failed: %v", err)
+	}
+
+	// Mutate the original condition AFTER the update
+	cond.Reason = "Mutated"
+
+	// The cached GPU must NOT reflect the mutation
+	gpu, found := c.Get("gpu-append-clone")
+	if !found {
+		t.Fatal("GPU not found")
+	}
+	for _, c := range gpu.Status.Conditions {
+		if c.Type == "NVMLReady" && c.Reason == "Mutated" {
+			t.Error("Cache condition was mutated externally: reason should be 'Original' not 'Mutated'")
+		}
+	}
+}
+
+func TestGpuCache_ReadBlockingDuringWrite(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	// Register a GPU with initial "Healthy" status
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-BLOCK-TEST"}
+	initialStatus := &v1alpha1.GpuStatus{
+		Conditions: []*v1alpha1.Condition{
+			{Type: "Ready", Status: "True", Reason: "Healthy"},
+		},
+	}
+	c.Register("gpu-block", spec, initialStatus, "test-provider")
+
+	const numReaders = 10
+	const numWrites = 100
+
+	// Track all statuses ever written
+	validReasons := sync.Map{}
+	validReasons.Store("Healthy", true)
+
+	var staleReads atomic.Int64
+	var totalReads atomic.Int64
+
+	var wg sync.WaitGroup
+
+	// Start readers that continuously read and validate
+	for i := 0; i < numReaders; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numWrites*2; j++ {
+				gpu, found := c.Get("gpu-block")
+				if !found {
+					continue
+				}
+				totalReads.Add(1)
+				if len(gpu.Status.Conditions) > 0 {
+					reason := gpu.Status.Conditions[0].Reason
+					if _, ok := validReasons.Load(reason); !ok {
+						staleReads.Add(1)
+						t.Errorf("Stale/invalid read: reason=%q is not a valid written value", reason)
+					}
+				}
+			}
+		}()
+	}
+
+	// Writer that updates the status sequentially
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < numWrites; i++ {
+			reason := fmt.Sprintf("Update-%d", i)
+			validReasons.Store(reason, true)
+			status := &v1alpha1.GpuStatus{
+				Conditions: []*v1alpha1.Condition{
+					{Type: "Ready", Status: "True", Reason: reason},
+				},
+			}
+			c.UpdateStatus("gpu-block", status, "test-provider")
+		}
+	}()
+
+	wg.Wait()
+
+	if staleReads.Load() > 0 {
+		t.Errorf("Detected %d stale reads out of %d total reads",
+			staleReads.Load(), totalReads.Load())
+	}
+
+	t.Logf("Completed: %d total reads, %d writes, 0 stale reads",
+		totalReads.Load(), numWrites)
+}
+
+func TestGpuCache_ConcurrentWritersDoNotCorrupt(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	// Register a GPU
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-CONCURRENT"}
+	c.Register("gpu-concurrent", spec, nil, "provider-1")
+
+	const numWriters = 5
+	const writesPerWriter = 50
+
+	var wg sync.WaitGroup
+	for w := 0; w < numWriters; w++ {
+		wg.Add(1)
+		go func(writerID int) {
+			defer wg.Done()
+			for i := 0; i < writesPerWriter; i++ {
+				status := &v1alpha1.GpuStatus{
+					Conditions: []*v1alpha1.Condition{
+						{
+							Type:   "Ready",
+							Status: "True",
+							Reason: fmt.Sprintf("Writer-%d-Update-%d", writerID, i),
+						},
+					},
+				}
+				c.UpdateStatus("gpu-concurrent", status, fmt.Sprintf("provider-%d", writerID))
+			}
+		}(w)
+	}
+
+	wg.Wait()
+
+	// Final state should be valid (one complete write, not a mix)
+	gpu, found := c.Get("gpu-concurrent")
+	if !found {
+		t.Fatal("GPU not found")
+	}
+	if len(gpu.Status.Conditions) != 1 {
+		t.Errorf("Expected 1 condition, got %d — possible corruption", len(gpu.Status.Conditions))
+	}
+	reason := gpu.Status.Conditions[0].Reason
+	t.Logf("Final status reason: %s", reason)
+	if len(reason) == 0 {
+		t.Error("Empty reason — possible corruption")
+	}
+}
+
+func TestGpuCache_UpdateCondition_MaxConditions(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	// Register a GPU
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-MAX-COND"}
+	c.Register("gpu-max-cond", spec, nil, "test-provider")
+
+	// Add 32 unique conditions (should succeed)
+	for i := 0; i < MaxConditionsPerGpu; i++ {
+		cond := &v1alpha1.Condition{
+			Type:   fmt.Sprintf("Condition-%d", i),
+			Status: "True",
+		}
+		_, err := c.UpdateCondition("gpu-max-cond", cond, "test-provider")
+		if err != nil {
+			t.Fatalf("UpdateCondition %d failed: %v", i, err)
+		}
+	}
+
+	// Verify 32 conditions
+	gpu, _ := c.Get("gpu-max-cond")
+	if len(gpu.Status.Conditions) != MaxConditionsPerGpu {
+		t.Errorf("Expected %d conditions, got %d", MaxConditionsPerGpu, len(gpu.Status.Conditions))
+	}
+
+	// Adding a 33rd unique condition should fail
+	cond := &v1alpha1.Condition{
+		Type:   "Condition-overflow",
+		Status: "True",
+	}
+	_, err := c.UpdateCondition("gpu-max-cond", cond, "test-provider")
+	if err == nil {
+		t.Error("Expected error when exceeding max conditions")
+	}
+
+	// Updating an EXISTING condition should still work
+	cond = &v1alpha1.Condition{
+		Type:   "Condition-0",
+		Status: "False",
+		Reason: "Updated",
+	}
+	_, err = c.UpdateCondition("gpu-max-cond", cond, "test-provider")
+	if err != nil {
+		t.Errorf("Updating existing condition should succeed, got: %v", err)
+	}
+}
+
+func TestGpuCache_Register_CloneSafety(t *testing.T) {
+	logger := klog.Background()
+	c := New(logger, nil)
+
+	spec := &v1alpha1.GpuSpec{Uuid: "GPU-REG-CLONE"}
+	initialStatus := &v1alpha1.GpuStatus{
+		Conditions: []*v1alpha1.Condition{
+			{Type: "Ready", Status: "True", Reason: "Original"},
+		},
+	}
+	c.Register("gpu-reg-clone", spec, initialStatus, "test-provider")
+
+	// Mutate original pointers AFTER registration
+	spec.Uuid = "MUTATED"
+	initialStatus.Conditions[0].Reason = "Mutated"
+
+	// Cache must NOT reflect the mutations
+	gpu, found := c.Get("gpu-reg-clone")
+	if !found {
+		t.Fatal("GPU not found")
+	}
+	if gpu.Spec.Uuid != "GPU-REG-CLONE" {
+		t.Errorf("Spec was mutated externally: got uuid=%q, want %q", gpu.Spec.Uuid, "GPU-REG-CLONE")
+	}
+	if gpu.Status.Conditions[0].Reason != "Original" {
+		t.Errorf("Status was mutated externally: got reason=%q, want %q",
+			gpu.Status.Conditions[0].Reason, "Original")
 	}
 }

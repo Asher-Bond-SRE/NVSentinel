@@ -60,6 +60,10 @@ type Config struct {
 
 	// NodeName is the Kubernetes node name (from downward API).
 	NodeName string
+
+	// Internal fields for flag parsing (not part of public API).
+	shutdownTimeoutSecs int
+	shutdownDelaySecs   int
 }
 
 // DefaultConfig returns a Config with default values.
@@ -97,27 +101,27 @@ func (c *Config) BindFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MetricsPort, "metrics-port", c.MetricsPort,
 		"Port for Prometheus metrics (/metrics)")
 
-	// Duration flags need special handling
-	shutdownTimeout := int(c.ShutdownTimeout.Seconds())
-	fs.IntVar(&shutdownTimeout, "shutdown-timeout", shutdownTimeout,
+	// Duration flags as int seconds (converted in ApplyDurationFlags)
+	fs.IntVar(&c.shutdownTimeoutSecs, "shutdown-timeout", int(c.ShutdownTimeout.Seconds()),
 		"Maximum time in seconds to wait for graceful shutdown")
-
-	shutdownDelay := int(c.ShutdownDelay.Seconds())
-	fs.IntVar(&shutdownDelay, "shutdown-delay", shutdownDelay,
+	fs.IntVar(&c.shutdownDelaySecs, "shutdown-delay", int(c.ShutdownDelay.Seconds()),
 		"Time in seconds to wait before starting shutdown (for k8s readiness propagation)")
 
 	fs.StringVar(&c.LogFormat, "log-format", c.LogFormat,
 		"Log output format: text or json")
 	fs.StringVar(&c.NodeName, "node-name", c.NodeName,
 		"Kubernetes node name (defaults to NODE_NAME env var)")
+}
 
-	// Parse hook to convert int to duration
-	fs.Func("", "", func(string) error {
-		c.ShutdownTimeout = time.Duration(shutdownTimeout) * time.Second
-		c.ShutdownDelay = time.Duration(shutdownDelay) * time.Second
-
-		return nil
-	})
+// ApplyDurationFlags converts int-second flag values to time.Duration.
+// Call this after flag.Parse().
+func (c *Config) ApplyDurationFlags() {
+	if c.shutdownTimeoutSecs > 0 {
+		c.ShutdownTimeout = time.Duration(c.shutdownTimeoutSecs) * time.Second
+	}
+	if c.shutdownDelaySecs > 0 {
+		c.ShutdownDelay = time.Duration(c.shutdownDelaySecs) * time.Second
+	}
 }
 
 // ApplyEnvironment overrides config from environment variables.

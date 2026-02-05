@@ -44,7 +44,16 @@ var (
 	// ErrConflict is returned when a resource version conflict occurs during
 	// optimistic concurrency control.
 	ErrConflict = errors.New("resource version conflict")
+
+	// ErrMaxConditionsExceeded is returned when a GPU already has the maximum
+	// number of conditions and a new unique type is being added.
+	ErrMaxConditionsExceeded = errors.New("maximum number of conditions exceeded")
 )
+
+// MaxConditionsPerGpu is the maximum number of distinct condition types
+// allowed on a single GPU. This prevents unbounded memory growth from
+// misbehaving providers. Updating existing condition types is always allowed.
+const MaxConditionsPerGpu = 32
 
 // Cache operation names for metrics.
 const (
@@ -160,6 +169,29 @@ func (c *GpuCache) List() []*v1alpha1.Gpu {
 	}
 
 	return result
+}
+
+// ListAndSubscribe atomically lists all GPUs and subscribes to events.
+//
+// This method acquires a read lock to get the current state and subscribes
+// to the broadcaster under the same logical operation, ensuring no events
+// are missed or duplicated between the list and the subscription.
+//
+// Returns the current GPU list and event channel.
+func (c *GpuCache) ListAndSubscribe(subscriberID string) ([]*v1alpha1.Gpu, <-chan WatchEvent) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Subscribe first (while holding read lock, no writes can happen)
+	events := c.broadcaster.Subscribe(subscriberID)
+
+	// List under the same read lock
+	result := make([]*v1alpha1.Gpu, 0, len(c.gpus))
+	for _, cached := range c.gpus {
+		result = append(result, proto.Clone(cached.gpu).(*v1alpha1.Gpu))
+	}
+
+	return result, events
 }
 
 // Count returns the number of GPUs in the cache.
@@ -363,7 +395,7 @@ func (c *GpuCache) UpdateStatusWithVersion(name string, status *v1alpha1.GpuStat
 
 	// Update status
 	c.resourceVersion++
-	cached.gpu.Status = status
+	cached.gpu.Status = proto.Clone(status).(*v1alpha1.GpuStatus)
 	setMetadataResourceVersion(cached.gpu, c.resourceVersion)
 	cached.resourceVersion = c.resourceVersion
 	cached.lastUpdated = time.Now()
@@ -451,8 +483,8 @@ func (c *GpuCache) Register(
 			Name:            name,
 			ResourceVersion: strconv.FormatInt(c.resourceVersion, 10),
 		},
-		Spec:   spec,
-		Status: initialStatus,
+		Spec:   proto.Clone(spec).(*v1alpha1.GpuSpec),
+		Status: proto.Clone(initialStatus).(*v1alpha1.GpuStatus),
 	}
 
 	c.gpus[name] = &cachedGpu{
@@ -535,7 +567,7 @@ func (c *GpuCache) UpdateStatus(name string, status *v1alpha1.GpuStatus, provide
 
 	// Update status
 	c.resourceVersion++
-	cached.gpu.Status = status
+	cached.gpu.Status = proto.Clone(status).(*v1alpha1.GpuStatus)
 	setMetadataResourceVersion(cached.gpu, c.resourceVersion)
 	cached.resourceVersion = c.resourceVersion
 	cached.lastUpdated = time.Now()
@@ -586,6 +618,10 @@ func (c *GpuCache) UpdateCondition(name string, condition *v1alpha1.Condition, p
 		cached.gpu.Status = &v1alpha1.GpuStatus{}
 	}
 
+	// Clone condition to prevent external mutations (must clone BEFORE
+	// modifying LastTransitionTime to avoid side-effects on caller's data)
+	condition = proto.Clone(condition).(*v1alpha1.Condition)
+
 	// Update last transition time if not set
 	if condition.LastTransitionTime == nil {
 		condition.LastTransitionTime = timestamppb.Now()
@@ -604,6 +640,15 @@ func (c *GpuCache) UpdateCondition(name string, condition *v1alpha1.Condition, p
 	}
 
 	if !found {
+		if len(cached.gpu.Status.Conditions) >= MaxConditionsPerGpu {
+			c.logger.V(1).Info("Max conditions exceeded",
+				"name", name,
+				"conditionType", condition.Type,
+				"current", len(cached.gpu.Status.Conditions),
+				"max", MaxConditionsPerGpu,
+			)
+			return 0, ErrMaxConditionsExceeded
+		}
 		cached.gpu.Status.Conditions = append(cached.gpu.Status.Conditions, condition)
 	}
 
@@ -684,7 +729,15 @@ func (c *GpuCache) MarkProviderGPUsUnknown(providerID string) int {
 			}
 		}
 		if !found {
-			cached.gpu.Status.Conditions = append(cached.gpu.Status.Conditions, unknownCondition)
+			if len(cached.gpu.Status.Conditions) < MaxConditionsPerGpu {
+				cached.gpu.Status.Conditions = append(cached.gpu.Status.Conditions, unknownCondition)
+			} else {
+				c.logger.V(1).Info("Cannot add Unknown condition: max conditions reached",
+					"name", name,
+					"current", len(cached.gpu.Status.Conditions),
+					"max", MaxConditionsPerGpu,
+				)
+			}
 		}
 
 		// Update version

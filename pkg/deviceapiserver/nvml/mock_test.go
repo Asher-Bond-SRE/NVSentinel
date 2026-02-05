@@ -1,4 +1,4 @@
-// Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,9 +17,17 @@
 package nvml
 
 import (
+	"context"
+	"errors"
+	"strconv"
 	"sync"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	v1alpha1 "github.com/nvidia/nvsentinel/internal/generated/device/v1alpha1"
+	"github.com/nvidia/nvsentinel/pkg/deviceapiserver/cache"
 )
 
 // MockLibrary is a mock implementation of Library for testing.
@@ -234,4 +242,69 @@ var (
 	_ Library  = (*MockLibrary)(nil)
 	_ Device   = (*MockDevice)(nil)
 	_ EventSet = (*MockEventSet)(nil)
+
+	_ v1alpha1.GpuServiceClient = (*fakeGpuServiceClient)(nil)
 )
+
+// fakeGpuServiceClient implements GpuServiceClient by delegating to a GpuCache.
+// This allows provider tests to exercise the real cache without gRPC.
+type fakeGpuServiceClient struct {
+	cache *cache.GpuCache
+}
+
+func newFakeClient(c *cache.GpuCache) *fakeGpuServiceClient {
+	return &fakeGpuServiceClient{cache: c}
+}
+
+func (f *fakeGpuServiceClient) CreateGpu(_ context.Context, req *v1alpha1.CreateGpuRequest, _ ...grpc.CallOption) (*v1alpha1.Gpu, error) {
+	gpu, err := f.cache.Create(req.GetGpu())
+	if err != nil {
+		if errors.Is(err, cache.ErrGpuAlreadyExists) {
+			existing, found := f.cache.Get(req.GetGpu().GetMetadata().GetName())
+			if !found {
+				return nil, err
+			}
+			return existing, nil
+		}
+		return nil, err
+	}
+	return gpu, nil
+}
+
+func (f *fakeGpuServiceClient) GetGpu(_ context.Context, req *v1alpha1.GetGpuRequest, _ ...grpc.CallOption) (*v1alpha1.GetGpuResponse, error) {
+	gpu, found := f.cache.Get(req.GetName())
+	if !found {
+		return nil, errors.New("gpu not found")
+	}
+	return &v1alpha1.GetGpuResponse{Gpu: gpu}, nil
+}
+
+func (f *fakeGpuServiceClient) UpdateGpu(_ context.Context, req *v1alpha1.UpdateGpuRequest, _ ...grpc.CallOption) (*v1alpha1.Gpu, error) {
+	var expectedVersion int64
+	if rvStr := req.GetGpu().GetMetadata().GetResourceVersion(); rvStr != "" {
+		expectedVersion, _ = strconv.ParseInt(rvStr, 10, 64)
+	}
+	gpu, err := f.cache.Update(req.GetGpu(), expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	return gpu, nil
+}
+
+func (f *fakeGpuServiceClient) ListGpus(_ context.Context, _ *v1alpha1.ListGpusRequest, _ ...grpc.CallOption) (*v1alpha1.ListGpusResponse, error) {
+	gpus := f.cache.List()
+	return &v1alpha1.ListGpusResponse{
+		GpuList: &v1alpha1.GpuList{Items: gpus},
+	}, nil
+}
+
+func (f *fakeGpuServiceClient) DeleteGpu(_ context.Context, req *v1alpha1.DeleteGpuRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+	if err := f.cache.Delete(req.GetName()); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (f *fakeGpuServiceClient) WatchGpus(_ context.Context, _ *v1alpha1.WatchGpusRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[v1alpha1.WatchGpusResponse], error) {
+	return nil, errors.New("WatchGpus not implemented in fake client")
+}

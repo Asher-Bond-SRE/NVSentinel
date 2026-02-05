@@ -135,17 +135,15 @@ func (s *GpuService) WatchGpus(req *v1alpha1.WatchGpusRequest, stream grpc.Serve
 	logger = logger.WithValues("subscriberID", subscriberID)
 	logger.V(1).Info("Watch stream started")
 
-	// Subscribe to cache events
-	broadcaster := s.cache.Broadcaster()
-	events := broadcaster.Subscribe(subscriberID)
+	// Atomically list current state and subscribe to events.
+	// This prevents the race where a GPU created between Subscribe
+	// and List would appear in both the event channel and the initial list.
+	gpus, events := s.cache.ListAndSubscribe(subscriberID)
 
 	defer func() {
-		broadcaster.Unsubscribe(subscriberID)
+		s.cache.Broadcaster().Unsubscribe(subscriberID)
 		logger.V(1).Info("Watch stream ended")
 	}()
-
-	// Send initial state (all existing GPUs as ADDED events)
-	gpus := s.cache.List()
 
 	for _, gpu := range gpus {
 		if err := stream.Send(&v1alpha1.WatchGpusResponse{
@@ -229,9 +227,15 @@ func (s *GpuService) CreateGpu(ctx context.Context, req *v1alpha1.CreateGpuReque
 	gpu, err := s.cache.Create(req.GetGpu())
 	if err != nil {
 		if errors.Is(err, cache.ErrGpuAlreadyExists) {
-			logger.V(1).Info("GPU already exists")
-			// Return the existing GPU for idempotent registration
-			existing, _ := s.cache.Get(req.GetGpu().GetMetadata().GetName())
+			logger.V(1).Info("GPU already exists, returning existing")
+			existing, found := s.cache.Get(req.GetGpu().GetMetadata().GetName())
+			if !found {
+				// Should not happen: Create said it exists but Get can't find it.
+				// This could occur if a concurrent Delete removed it between calls.
+				logger.Error(nil, "GPU reported as existing but not found in cache",
+					"name", req.GetGpu().GetMetadata().GetName())
+				return nil, status.Errorf(codes.Internal, "gpu state inconsistency: exists but not found")
+			}
 			return existing, nil
 		}
 

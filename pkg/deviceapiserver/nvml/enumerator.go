@@ -1,4 +1,4 @@
-// Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -70,8 +70,8 @@ func (p *Provider) enumerateDevices() (int, error) {
 			continue
 		}
 
-		// Register GPU via gRPC (CreateGpu is idempotent)
-		resp, err := p.client.CreateGpu(p.ctx, &v1alpha1.CreateGpuRequest{Gpu: gpu})
+		// Register GPU via gRPC (CreateGpu is idempotent — returns existing GPU if already registered)
+		_, err = p.client.CreateGpu(p.ctx, &v1alpha1.CreateGpuRequest{Gpu: gpu})
 		if err != nil {
 			p.logger.Error(err, "Failed to create GPU via gRPC", "uuid", gpu.GetMetadata().GetName())
 
@@ -81,17 +81,11 @@ func (p *Provider) enumerateDevices() (int, error) {
 		// Track UUID for health monitoring
 		p.gpuUUIDs = append(p.gpuUUIDs, gpu.GetMetadata().GetName())
 
-		if resp.Created {
-			p.logger.Info("Created GPU",
-				"uuid", gpu.GetMetadata().GetName(),
-				"productName", productName,
-				"memory", formatBytes(memoryBytes),
-			)
-		} else {
-			p.logger.V(1).Info("GPU already exists",
-				"uuid", gpu.GetMetadata().GetName(),
-			)
-		}
+		p.logger.Info("GPU registered",
+			"uuid", gpu.GetMetadata().GetName(),
+			"productName", productName,
+			"memory", formatBytes(memoryBytes),
+		)
 
 		successCount++
 	}
@@ -174,30 +168,63 @@ const (
 	ConditionSourceNVML = "nvml-provider"
 )
 
-// UpdateCondition updates a condition on a GPU via the gRPC API.
+// UpdateCondition updates a single condition on a GPU via gRPC.
 //
-// This completely replaces the GPU's status with a single condition.
+// Since the proto API only has UpdateGpu (full replacement), this method:
+// 1. Gets the current GPU state
+// 2. Updates/adds the condition in the status
+// 3. Sends the full GPU back via UpdateGpu
+//
 // The condition's LastTransitionTime is set to the current time.
 func (p *Provider) UpdateCondition(
 	uuid string,
 	conditionType string,
-	status string,
+	conditionStatus string,
 	reason, message string,
 ) error {
+	// Get current GPU state
+	resp, err := p.client.GetGpu(p.ctx, &v1alpha1.GetGpuRequest{Name: uuid})
+	if err != nil {
+		return fmt.Errorf("failed to get GPU %s: %w", uuid, err)
+	}
+
+	gpu := resp.GetGpu()
+	if gpu == nil {
+		return fmt.Errorf("GetGpu returned nil for %s", uuid)
+	}
+
+	// Ensure status exists
+	if gpu.Status == nil {
+		gpu.Status = &v1alpha1.GpuStatus{}
+	}
+
+	// Build the new condition
 	condition := &v1alpha1.Condition{
 		Type:               conditionType,
-		Status:             status,
+		Status:             conditionStatus,
 		Reason:             reason,
 		Message:            message,
 		LastTransitionTime: timestamppb.New(time.Now()),
 	}
 
-	_, err := p.client.UpdateGpuStatus(p.ctx, &v1alpha1.UpdateGpuStatusRequest{
-		Name: uuid,
-		Status: &v1alpha1.GpuStatus{
-			Conditions: []*v1alpha1.Condition{condition},
-		},
-	})
+	// Find and replace existing condition, or append
+	found := false
+	for i, existing := range gpu.Status.Conditions {
+		if existing.Type == conditionType {
+			gpu.Status.Conditions[i] = condition
+			found = true
+			break
+		}
+	}
+	if !found {
+		gpu.Status.Conditions = append(gpu.Status.Conditions, condition)
+	}
 
-	return err
+	// Update the full GPU
+	_, err = p.client.UpdateGpu(p.ctx, &v1alpha1.UpdateGpuRequest{Gpu: gpu})
+	if err != nil {
+		return fmt.Errorf("failed to update GPU %s: %w", uuid, err)
+	}
+
+	return nil
 }
