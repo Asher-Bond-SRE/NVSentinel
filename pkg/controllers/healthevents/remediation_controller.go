@@ -383,16 +383,17 @@ func (r *RemediationController) executeTerminate(ctx context.Context, event *nvs
 func (r *RemediationController) executeGPUReset(ctx context.Context, event *nvsentinelv1alpha1.HealthEvent, log klog.Logger) error {
 	nodeName := event.Spec.NodeName
 
-	// GPU reset needs to be handled by the device-api-server on the node.
-	// We signal this by setting an annotation that the server watches.
+	// Use a patch to set annotations, avoiding full object Update conflicts.
+	patch := client.MergeFrom(event.DeepCopy())
+
 	if event.Annotations == nil {
 		event.Annotations = make(map[string]string)
 	}
 	event.Annotations["nvsentinel.nvidia.com/gpu-reset-requested"] = "true"
 	event.Annotations["nvsentinel.nvidia.com/gpu-reset-requested-at"] = time.Now().UTC().Format(time.RFC3339)
 
-	if err := r.Update(ctx, event); err != nil {
-		return fmt.Errorf("failed to update event with gpu-reset annotation: %w", err)
+	if err := r.Patch(ctx, event, patch); err != nil {
+		return fmt.Errorf("failed to patch event with gpu-reset annotation: %w", err)
 	}
 
 	log.Info("GPU reset requested via annotation", "node", nodeName)
