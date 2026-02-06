@@ -108,7 +108,7 @@ spec:
           image: ghcr.io/nvidia/nvsentinel/device-api-server:latest
           imagePullPolicy: IfNotPresent
           args:
-            - --grpc-address=:50051
+            - --grpc-address=127.0.0.1:50051
             - --health-port=8081
             - --metrics-port=9090
             - --provider-address=localhost:9001
