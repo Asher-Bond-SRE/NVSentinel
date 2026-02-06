@@ -17,12 +17,12 @@ package nvml
 // XID errors documentation:
 // https://docs.nvidia.com/deploy/xid-errors/index.html
 
-// DefaultIgnoredXids contains XID error codes that are typically caused by
+// defaultIgnoredXids contains XID error codes that are typically caused by
 // application errors rather than hardware failures. These are ignored by
 // default to avoid false positives in health monitoring.
 //
 // Reference: https://docs.nvidia.com/deploy/xid-errors/index.html#topic_4
-var DefaultIgnoredXids = map[uint64]bool{
+var defaultIgnoredXids = map[uint64]bool{
 	// Application errors - GPU should still be healthy
 	13:  true, // Graphics Engine Exception
 	31:  true, // GPU memory page fault
@@ -32,9 +32,9 @@ var DefaultIgnoredXids = map[uint64]bool{
 	109: true, // Context Switch Timeout Error
 }
 
-// CriticalXids contains XID error codes that indicate critical hardware
+// criticalXids contains XID error codes that indicate critical hardware
 // failures requiring immediate attention.
-var CriticalXids = map[uint64]bool{
+var criticalXids = map[uint64]bool{
 	// Memory errors
 	48: true, // Double Bit ECC Error
 	63: true, // Row remapping failure
@@ -80,13 +80,32 @@ var XidDescriptions = map[uint64]string{
 	120: "GSP firmware error",
 }
 
+// IsDefaultIgnored returns true if the XID is in the default ignored set.
+func IsDefaultIgnored(xid uint64) bool {
+	return defaultIgnoredXids[xid]
+}
+
+// IsCritical returns true if the XID is in the critical set.
+func IsCritical(xid uint64) bool {
+	return criticalXids[xid]
+}
+
+// DefaultIgnoredXidsList returns a copy of the default ignored XID set.
+func DefaultIgnoredXidsList() map[uint64]bool {
+	out := make(map[uint64]bool, len(defaultIgnoredXids))
+	for k, v := range defaultIgnoredXids {
+		out[k] = v
+	}
+	return out
+}
+
 // isIgnoredXid returns true if the XID should be ignored for health purposes.
 //
 // An XID is ignored if it's in the default ignored list OR in the additional
 // ignored list provided by the user.
 func isIgnoredXid(xid uint64, additionalIgnored []uint64) bool {
 	// Check default ignored list
-	if DefaultIgnoredXids[xid] {
+	if defaultIgnoredXids[xid] {
 		return true
 	}
 
@@ -102,7 +121,7 @@ func isIgnoredXid(xid uint64, additionalIgnored []uint64) bool {
 
 // IsCriticalXid returns true if the XID indicates a critical hardware failure.
 func IsCriticalXid(xid uint64) bool {
-	return CriticalXids[xid]
+	return criticalXids[xid]
 }
 
 // xidToString returns a human-readable description for an XID.
@@ -174,11 +193,11 @@ const (
 
 // GetXidSeverity returns the severity level for an XID.
 func GetXidSeverity(xid uint64) XidSeverity {
-	if DefaultIgnoredXids[xid] {
+	if defaultIgnoredXids[xid] {
 		return XidSeverityIgnored
 	}
 
-	if CriticalXids[xid] {
+	if criticalXids[xid] {
 		return XidSeverityCritical
 	}
 
