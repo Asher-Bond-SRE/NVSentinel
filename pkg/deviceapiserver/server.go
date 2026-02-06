@@ -186,6 +186,9 @@ func (s *Server) Start(ctx context.Context) error {
 		s.logger.Error(err, "Server error")
 		metricsCancel()
 
+		// Clean up resources before returning
+		_ = s.shutdown()
+
 		return err
 	}
 
