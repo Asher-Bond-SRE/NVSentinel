@@ -94,7 +94,7 @@ spec:
                 command: ["sleep", "{{ .Values.server.shutdownDelay }}"]
           ports:
             - name: grpc
-              containerPort: {{ .Values.server.grpcAddress | trimPrefix ":" | int }}
+              containerPort: {{ include "device-api-server.grpcPort" . }}
               protocol: TCP
             - name: health
               containerPort: {{ .Values.server.healthPort }}
