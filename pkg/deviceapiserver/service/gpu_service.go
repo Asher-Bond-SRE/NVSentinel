@@ -18,6 +18,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -230,15 +231,15 @@ func (s *GpuService) CreateGpu(ctx context.Context, req *v1alpha1.CreateGpuReque
 			if !found {
 				// Should not happen: Create said it exists but Get can't find it.
 				// This could occur if a concurrent Delete removed it between calls.
-				logger.Error(nil, "GPU reported as existing but not found in cache",
+				logger.Error(fmt.Errorf("gpu exists but not found after create"), "State inconsistency",
 					"name", req.GetGpu().GetMetadata().GetName())
-				return nil, status.Errorf(codes.Internal, "gpu state inconsistency: exists but not found")
+				return nil, status.Errorf(codes.Internal, "internal error")
 			}
 			return existing, nil
 		}
 
-		logger.Error(err, "Failed to create GPU")
-		return nil, status.Errorf(codes.Internal, "failed to create gpu: %v", err)
+		logger.Error(err, "Failed to create gpu", "name", req.GetGpu().GetMetadata().GetName())
+		return nil, status.Errorf(codes.Internal, "internal error")
 	}
 
 	logger.Info("GPU created", "resourceVersion", gpu.GetMetadata().GetResourceVersion())
@@ -293,8 +294,8 @@ func (s *GpuService) UpdateGpu(ctx context.Context, req *v1alpha1.UpdateGpuReque
 			return nil, status.Error(codes.Aborted, "resource version conflict")
 		}
 
-		logger.Error(err, "Failed to update GPU")
-		return nil, status.Errorf(codes.Internal, "failed to update gpu: %v", err)
+		logger.Error(err, "Failed to update gpu", "name", req.GetGpu().GetMetadata().GetName())
+		return nil, status.Errorf(codes.Internal, "internal error")
 	}
 
 	logger.V(1).Info("GPU updated", "resourceVersion", gpu.GetMetadata().GetResourceVersion())
@@ -349,8 +350,8 @@ func (s *GpuService) UpdateGpuStatus(ctx context.Context, req *v1alpha1.UpdateGp
 			return nil, status.Error(codes.Aborted, "resource version conflict")
 		}
 
-		logger.Error(err, "Failed to update GPU status")
-		return nil, status.Errorf(codes.Internal, "failed to update gpu status: %v", err)
+		logger.Error(err, "Failed to update gpu status", "name", req.GetName())
+		return nil, status.Errorf(codes.Internal, "internal error")
 	}
 
 	logger.V(1).Info("GPU status updated", "resourceVersion", gpu.GetMetadata().GetResourceVersion())
@@ -384,8 +385,8 @@ func (s *GpuService) DeleteGpu(ctx context.Context, req *v1alpha1.DeleteGpuReque
 			return nil, status.Error(codes.NotFound, "gpu not found")
 		}
 
-		logger.Error(err, "Failed to delete GPU")
-		return nil, status.Errorf(codes.Internal, "failed to delete gpu: %v", err)
+		logger.Error(err, "Failed to delete gpu", "name", req.GetName())
+		return nil, status.Errorf(codes.Internal, "internal error")
 	}
 
 	logger.Info("GPU deleted")
