@@ -34,50 +34,6 @@ var (
 		},
 		[]string{"node", "outcome"}, // outcome: success, failed, skipped
 	)
-
-	// quarantineLatencySeconds tracks the time taken to quarantine a node.
-	quarantineLatencySeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "quarantine_controller",
-			Name:      "latency_seconds",
-			Help:      "Time taken from HealthEvent creation to node quarantine",
-			Buckets:   []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
-		},
-		[]string{"node"},
-	)
-
-	// healthEventsProcessedTotal tracks the number of health events processed.
-	healthEventsProcessedTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "quarantine_controller",
-			Name:      "events_processed_total",
-			Help:      "Total number of health events processed",
-		},
-		[]string{"source", "component_class", "is_fatal"},
-	)
-
-	// reconcileErrorsTotal tracks reconciliation errors.
-	reconcileErrorsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "quarantine_controller",
-			Name:      "reconcile_errors_total",
-			Help:      "Total number of reconciliation errors",
-		},
-		[]string{"error_type"},
-	)
-
-	// nodesQuarantined is a gauge showing currently quarantined nodes.
-	nodesQuarantined = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "quarantine_controller",
-			Name:      "nodes_quarantined",
-			Help:      "Number of nodes currently quarantined by NVSentinel",
-		},
-	)
 )
 
 // registerMetrics registers all metrics with the controller-runtime metrics registry.
@@ -85,27 +41,8 @@ func registerMetrics() {
 	registerOnce.Do(func() {
 		metrics.Registry.MustRegister(
 			quarantineActionsTotal,
-			quarantineLatencySeconds,
-			healthEventsProcessedTotal,
-			reconcileErrorsTotal,
-			nodesQuarantined,
 		)
 	})
-}
-
-// RecordQuarantineLatency records the time from event detection to quarantine.
-func RecordQuarantineLatency(node string, seconds float64) {
-	quarantineLatencySeconds.WithLabelValues(node).Observe(seconds)
-}
-
-// IncrementNodesQuarantined increments the quarantined nodes gauge.
-func IncrementNodesQuarantined() {
-	nodesQuarantined.Inc()
-}
-
-// DecrementNodesQuarantined decrements the quarantined nodes gauge.
-func DecrementNodesQuarantined() {
-	nodesQuarantined.Dec()
 }
 
 // =============================================================================
@@ -125,40 +62,6 @@ var (
 		},
 		[]string{"node", "outcome"}, // outcome: evicted, failed, skipped, completed
 	)
-
-	// drainLatencySeconds tracks the time taken to drain a node.
-	drainLatencySeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "drain_controller",
-			Name:      "latency_seconds",
-			Help:      "Time taken from quarantine to drain completion",
-			Buckets:   []float64{1, 5, 10, 30, 60, 120, 300, 600},
-		},
-		[]string{"node"},
-	)
-
-	// podsEvictedTotal tracks the number of pods evicted.
-	podsEvictedTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "drain_controller",
-			Name:      "pods_evicted_total",
-			Help:      "Total number of pods evicted during drain",
-		},
-		[]string{"node", "namespace"},
-	)
-
-	// pdbBlockedTotal tracks evictions blocked by PDBs.
-	pdbBlockedTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "drain_controller",
-			Name:      "pdb_blocked_total",
-			Help:      "Total number of evictions blocked by PodDisruptionBudget",
-		},
-		[]string{"node", "namespace"},
-	)
 )
 
 // registerDrainMetrics registers drain controller metrics.
@@ -166,9 +69,6 @@ func registerDrainMetrics() {
 	registerDrainOnce.Do(func() {
 		metrics.Registry.MustRegister(
 			drainActionsTotal,
-			drainLatencySeconds,
-			podsEvictedTotal,
-			pdbBlockedTotal,
 		)
 	})
 }
@@ -190,28 +90,6 @@ var (
 		},
 		[]string{"node", "phase"},
 	)
-
-	// ttlEventsAgeSeconds tracks the age of events at deletion time.
-	ttlEventsAgeSeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "ttl_controller",
-			Name:      "event_age_seconds",
-			Help:      "Age of HealthEvents at deletion time",
-			Buckets:   []float64{3600, 86400, 604800, 2592000, 7776000}, // 1h, 1d, 7d, 30d, 90d
-		},
-		[]string{"node"},
-	)
-
-	// ttlPolicyReloadsTotal tracks policy ConfigMap reloads.
-	ttlPolicyReloadsTotal = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "ttl_controller",
-			Name:      "policy_reloads_total",
-			Help:      "Total number of TTL policy reloads",
-		},
-	)
 )
 
 // registerTTLMetrics registers TTL controller metrics.
@@ -219,8 +97,6 @@ func registerTTLMetrics() {
 	registerTTLOnce.Do(func() {
 		metrics.Registry.MustRegister(
 			ttlDeletionsTotal,
-			ttlEventsAgeSeconds,
-			ttlPolicyReloadsTotal,
 		)
 	})
 }
@@ -253,29 +129,6 @@ var (
 		},
 		[]string{"node", "strategy"},
 	)
-
-	// remediationLatencySeconds tracks remediation execution latency.
-	remediationLatencySeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "remediation_controller",
-			Name:      "latency_seconds",
-			Help:      "Latency of remediation actions",
-			Buckets:   []float64{1, 5, 10, 30, 60, 120, 300, 600},
-		},
-		[]string{"node", "strategy"},
-	)
-
-	// rebootJobsCreatedTotal tracks reboot jobs created.
-	rebootJobsCreatedTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "nvsentinel",
-			Subsystem: "remediation_controller",
-			Name:      "reboot_jobs_created_total",
-			Help:      "Total number of reboot jobs created",
-		},
-		[]string{"node"},
-	)
 )
 
 // registerRemediationMetrics registers remediation controller metrics.
@@ -284,8 +137,6 @@ func registerRemediationMetrics() {
 		metrics.Registry.MustRegister(
 			remediationActionsTotal,
 			remediationFailuresTotal,
-			remediationLatencySeconds,
-			rebootJobsCreatedTotal,
 		)
 	})
 }
