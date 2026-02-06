@@ -95,11 +95,11 @@ func (r *QuarantineController) Reconcile(ctx context.Context, req ctrl.Request) 
 	var node corev1.Node
 	if err := r.Get(ctx, client.ObjectKey{Name: nodeName}, &node); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Error(err, "Node not found", "nodeName", nodeName)
+			log.Info("Node not found, cancelling health event", "nodeName", nodeName)
 			r.Recorder.Eventf(&healthEvent, corev1.EventTypeWarning, "NodeNotFound",
-				"Node %s not found, cannot quarantine", nodeName)
-			// Don't retry - node doesn't exist
-			return ctrl.Result{}, nil
+				"Node %s not found, cancelling event", nodeName)
+			return r.markAsCancelled(ctx, &healthEvent, "NodeNotFound",
+				fmt.Sprintf("Node %s not found", nodeName))
 		}
 		log.Error(err, "Failed to get node", "nodeName", nodeName)
 		return ctrl.Result{}, err

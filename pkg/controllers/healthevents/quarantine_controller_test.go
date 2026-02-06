@@ -312,7 +312,7 @@ func TestQuarantineController_Reconcile_NodeNotFound(t *testing.T) {
 		},
 	}
 
-	// Should not error - just records warning event
+	// Should not error - just records warning event and cancels the event
 	result, err := r.Reconcile(ctx, req)
 	if err != nil {
 		t.Errorf("Reconcile() error = %v, want nil", err)
@@ -329,6 +329,15 @@ func TestQuarantineController_Reconcile_NodeNotFound(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Error("Timeout waiting for event")
+	}
+
+	// The HealthEvent should transition to Cancelled phase
+	var updatedEvent nvsentinelv1alpha1.HealthEvent
+	if err := fakeClient.Get(ctx, req.NamespacedName, &updatedEvent); err != nil {
+		t.Fatalf("Failed to get updated HealthEvent: %v", err)
+	}
+	if updatedEvent.Status.Phase != nvsentinelv1alpha1.PhaseCancelled {
+		t.Errorf("HealthEvent phase = %v, want %v", updatedEvent.Status.Phase, nvsentinelv1alpha1.PhaseCancelled)
 	}
 }
 
