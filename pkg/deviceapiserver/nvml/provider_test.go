@@ -22,8 +22,11 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"k8s.io/klog/v2"
 
+	v1alpha1 "github.com/nvidia/nvsentinel/internal/generated/device/v1alpha1"
 	"github.com/nvidia/nvsentinel/pkg/deviceapiserver/cache"
 )
 
@@ -508,4 +511,83 @@ func TestProvider_MarkHealthy(t *testing.T) {
 	}
 
 	t.Error("NVMLReady condition not found")
+}
+
+// contextCapturingClient wraps a GpuServiceClient and captures the context
+// passed to CreateGpu. This allows tests to verify that enumerateDevices
+// receives a non-nil context.
+type contextCapturingClient struct {
+	inner       v1alpha1.GpuServiceClient
+	capturedCtx context.Context
+}
+
+func newContextCapturingClient(inner v1alpha1.GpuServiceClient) *contextCapturingClient {
+	return &contextCapturingClient{inner: inner}
+}
+
+func (c *contextCapturingClient) CreateGpu(ctx context.Context, req *v1alpha1.CreateGpuRequest, opts ...grpc.CallOption) (*v1alpha1.Gpu, error) {
+	c.capturedCtx = ctx
+	return c.inner.CreateGpu(ctx, req, opts...)
+}
+
+func (c *contextCapturingClient) GetGpu(ctx context.Context, req *v1alpha1.GetGpuRequest, opts ...grpc.CallOption) (*v1alpha1.GetGpuResponse, error) {
+	return c.inner.GetGpu(ctx, req, opts...)
+}
+
+func (c *contextCapturingClient) UpdateGpu(ctx context.Context, req *v1alpha1.UpdateGpuRequest, opts ...grpc.CallOption) (*v1alpha1.Gpu, error) {
+	return c.inner.UpdateGpu(ctx, req, opts...)
+}
+
+func (c *contextCapturingClient) UpdateGpuStatus(ctx context.Context, req *v1alpha1.UpdateGpuStatusRequest, opts ...grpc.CallOption) (*v1alpha1.Gpu, error) {
+	return c.inner.UpdateGpuStatus(ctx, req, opts...)
+}
+
+func (c *contextCapturingClient) ListGpus(ctx context.Context, req *v1alpha1.ListGpusRequest, opts ...grpc.CallOption) (*v1alpha1.ListGpusResponse, error) {
+	return c.inner.ListGpus(ctx, req, opts...)
+}
+
+func (c *contextCapturingClient) DeleteGpu(ctx context.Context, req *v1alpha1.DeleteGpuRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	return c.inner.DeleteGpu(ctx, req, opts...)
+}
+
+func (c *contextCapturingClient) WatchGpus(ctx context.Context, req *v1alpha1.WatchGpusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[v1alpha1.WatchGpusResponse], error) {
+	return c.inner.WatchGpus(ctx, req, opts...)
+}
+
+// TestProvider_Start_ContextSetBeforeEnumerate verifies that enumerateDevices
+// receives a non-nil context. Before the fix, p.ctx was nil when
+// enumerateDevices was called, which would cause a gRPC panic on any real
+// gRPC client.
+func TestProvider_Start_ContextSetBeforeEnumerate(t *testing.T) {
+	mockLib := NewMockLibrary()
+	mockLib.AddDevice(0, NewMockDevice("GPU-ctx-test", "NVIDIA A100"))
+
+	gpuCache := cache.New(testLogger(), nil)
+	capturingClient := newContextCapturingClient(newFakeClient(gpuCache))
+
+	provider := &Provider{
+		config:  Config{HealthCheckEnabled: false},
+		nvmllib: mockLib,
+		client:  capturingClient,
+		logger:  testLogger(),
+	}
+
+	ctx := context.Background()
+	err := provider.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer provider.Stop()
+
+	// The capturing client recorded the context passed to CreateGpu during
+	// enumerateDevices. If the fix is missing, this will be nil because p.ctx
+	// was not set before enumerateDevices was called.
+	if capturingClient.capturedCtx == nil {
+		t.Fatal("CreateGpu was called with nil context; p.ctx must be set before enumerateDevices()")
+	}
+
+	// Also verify p.ctx is set after Start returns.
+	if provider.ctx == nil {
+		t.Fatal("p.ctx should be set after Start()")
+	}
 }

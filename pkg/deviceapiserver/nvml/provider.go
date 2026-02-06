@@ -166,9 +166,16 @@ func (p *Provider) Start(ctx context.Context) error {
 		p.logger.Info("NVML initialized", "driverVersion", driverVersion)
 	}
 
+	// Set up context for lifecycle management (must be before enumerateDevices,
+	// which uses p.ctx for gRPC calls)
+	p.ctx, p.cancel = context.WithCancel(ctx)
+
 	// Enumerate devices
 	count, err := p.enumerateDevices()
 	if err != nil {
+		p.cancel()
+		p.ctx = nil
+		p.cancel = nil
 		_ = p.nvmllib.Shutdown()
 
 		return fmt.Errorf("failed to enumerate devices: %w", err)
@@ -178,8 +185,6 @@ func (p *Provider) Start(ctx context.Context) error {
 
 	p.logger.Info("Enumerated GPUs", "count", count)
 
-	// Set up context for lifecycle management
-	p.ctx, p.cancel = context.WithCancel(ctx)
 	p.initialized = true
 
 	// Start health monitoring if enabled and we have GPUs

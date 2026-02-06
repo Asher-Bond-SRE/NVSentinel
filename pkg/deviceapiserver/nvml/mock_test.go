@@ -298,6 +298,24 @@ func (f *fakeGpuServiceClient) ListGpus(_ context.Context, _ *v1alpha1.ListGpusR
 	}, nil
 }
 
+func (f *fakeGpuServiceClient) UpdateGpuStatus(_ context.Context, req *v1alpha1.UpdateGpuStatusRequest, _ ...grpc.CallOption) (*v1alpha1.Gpu, error) {
+	// Get existing GPU, update its status, and save
+	gpu, found := f.cache.Get(req.GetName())
+	if !found {
+		return nil, errors.New("gpu not found")
+	}
+	gpu.Status = req.GetStatus()
+	var expectedVersion int64
+	if rvStr := gpu.GetMetadata().GetResourceVersion(); rvStr != "" {
+		expectedVersion, _ = strconv.ParseInt(rvStr, 10, 64)
+	}
+	updated, err := f.cache.Update(gpu, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 func (f *fakeGpuServiceClient) DeleteGpu(_ context.Context, req *v1alpha1.DeleteGpuRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
 	if err := f.cache.Delete(req.GetName()); err != nil {
 		return nil, err
