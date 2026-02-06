@@ -161,7 +161,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	// Start gRPC server
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	s.startGRPCServers(errCh)
 
 	// Mark as ready (for gRPC health and HTTP readiness)
