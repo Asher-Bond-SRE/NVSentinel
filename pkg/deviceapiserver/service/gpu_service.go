@@ -276,7 +276,11 @@ func (s *GpuService) UpdateGpu(ctx context.Context, req *v1alpha1.UpdateGpuReque
 	// Parse expected version from metadata (string) to int64 for cache comparison
 	var expectedVersion int64
 	if rvStr := req.GetGpu().GetMetadata().GetResourceVersion(); rvStr != "" {
-		expectedVersion, _ = strconv.ParseInt(rvStr, 10, 64)
+		var parseErr error
+		expectedVersion, parseErr = strconv.ParseInt(rvStr, 10, 64)
+		if parseErr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid resource_version %q: must be numeric", rvStr)
+		}
 	}
 	gpu, err := s.cache.Update(req.GetGpu(), expectedVersion)
 	if err != nil {
@@ -327,7 +331,11 @@ func (s *GpuService) UpdateGpuStatus(ctx context.Context, req *v1alpha1.UpdateGp
 	// Parse expected version for optimistic concurrency
 	var expectedVersion int64
 	if rvStr := req.GetResourceVersion(); rvStr != "" {
-		expectedVersion, _ = strconv.ParseInt(rvStr, 10, 64)
+		var parseErr error
+		expectedVersion, parseErr = strconv.ParseInt(rvStr, 10, 64)
+		if parseErr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid resource_version %q: must be numeric", rvStr)
+		}
 	}
 
 	gpu, err := s.cache.UpdateStatusWithVersion(req.GetName(), req.GetStatus(), expectedVersion)

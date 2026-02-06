@@ -446,6 +446,63 @@ func TestListGpus_ResourceVersionAtomic(t *testing.T) {
 	}
 }
 
+func TestUpdateGpu_InvalidResourceVersion(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	// Create a GPU first
+	gpu := &v1alpha1.Gpu{
+		Metadata: &v1alpha1.ObjectMeta{Name: "gpu-0"},
+		Spec:     &v1alpha1.GpuSpec{Uuid: "GPU-0"},
+	}
+	_, err := svc.CreateGpu(ctx, &v1alpha1.CreateGpuRequest{Gpu: gpu})
+	if err != nil {
+		t.Fatalf("CreateGpu failed: %v", err)
+	}
+
+	// Update with non-numeric resource version
+	gpu.Metadata.ResourceVersion = "abc"
+	_, err = svc.UpdateGpu(ctx, &v1alpha1.UpdateGpuRequest{Gpu: gpu})
+	if err == nil {
+		t.Fatal("expected error for non-numeric resource version")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got %v", err)
+	}
+}
+
+func TestUpdateGpuStatus_InvalidResourceVersion(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	// Create a GPU first
+	gpu := &v1alpha1.Gpu{
+		Metadata: &v1alpha1.ObjectMeta{Name: "gpu-0"},
+		Spec:     &v1alpha1.GpuSpec{Uuid: "GPU-0"},
+	}
+	_, err := svc.CreateGpu(ctx, &v1alpha1.CreateGpuRequest{Gpu: gpu})
+	if err != nil {
+		t.Fatalf("CreateGpu failed: %v", err)
+	}
+
+	// UpdateGpuStatus with non-numeric resource version
+	_, err = svc.UpdateGpuStatus(ctx, &v1alpha1.UpdateGpuStatusRequest{
+		Name:            "gpu-0",
+		ResourceVersion: "not-a-number",
+		Status:          &v1alpha1.GpuStatus{},
+	})
+	if err == nil {
+		t.Fatal("expected error for non-numeric resource version")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got %v", err)
+	}
+}
+
 func TestFullCRUDCycle(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
