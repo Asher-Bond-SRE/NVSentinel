@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
@@ -30,10 +31,12 @@ type Config struct {
 }
 
 type FileConfig struct {
-	InitContainers       []corev1.Container `yaml:"initContainers"`
-	GPUResourceNames     []string           `yaml:"gpuResourceNames"`
-	NetworkResourceNames []string           `yaml:"networkResourceNames"`
-	DCGM                 DCGMConfig         `yaml:"dcgm"`
+	InitContainers       []corev1.Container     `yaml:"initContainers"`
+	GPUResourceNames     []string               `yaml:"gpuResourceNames"`
+	NetworkResourceNames []string               `yaml:"networkResourceNames"`
+	DCGM                 DCGMConfig             `yaml:"dcgm"`
+	GangDiscovery        GangDiscoveryConfig    `yaml:"gangDiscovery"`
+	GangCoordination     GangCoordinationConfig `yaml:"gangCoordination"`
 }
 
 type DCGMConfig struct {
@@ -41,6 +44,45 @@ type DCGMConfig struct {
 	DiagLevel          int    `yaml:"diagLevel"`
 	ConnectorSocket    string `yaml:"connectorSocket"`
 	ProcessingStrategy string `yaml:"processingStrategy"`
+}
+
+// GangDiscoveryConfig contains configuration for gang discovery.
+// Gang discovery uses a chain-of-responsibility pattern: Volcano -> Kueue -> Labels.
+// Each discoverer checks if it can handle a pod based on annotations/labels present.
+type GangDiscoveryConfig struct {
+	// Labels contains configuration for label-based discovery (fallback).
+	Labels LabelDiscoveryConfig `yaml:"labels,omitempty"`
+}
+
+// LabelDiscoveryConfig contains configuration for label-based gang discovery.
+type LabelDiscoveryConfig struct {
+	// GangIDLabel is the label key that identifies the gang.
+	// All pods with the same value for this label are considered part of the same gang.
+	// Default: "app.kubernetes.io/gang-id"
+	GangIDLabel string `yaml:"gangIdLabel,omitempty"`
+
+	// GangSizeLabel is the label key that specifies the expected gang size.
+	// If not present on pods, size is determined by counting discovered pods.
+	// Default: "app.kubernetes.io/gang-size"
+	GangSizeLabel string `yaml:"gangSizeLabel,omitempty"`
+}
+
+// GangCoordinationConfig contains configuration for gang coordination.
+type GangCoordinationConfig struct {
+	// Enabled enables gang coordination for multi-node checks.
+	Enabled bool `yaml:"enabled"`
+
+	// Timeout is the maximum time to wait for all gang members to register.
+	// Default: 10m
+	Timeout time.Duration `yaml:"timeout,omitempty"`
+
+	// MasterPort is the port used for PyTorch distributed TCP bootstrap.
+	// Default: 29500
+	MasterPort int `yaml:"masterPort,omitempty"`
+
+	// ConfigMapMountPath is the path where gang ConfigMap is mounted in init containers.
+	// Default: /etc/preflight
+	ConfigMapMountPath string `yaml:"configMapMountPath,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -64,6 +106,28 @@ func Load(path string) (*Config, error) {
 
 	if fileConfig.DCGM.ProcessingStrategy == "" {
 		fileConfig.DCGM.ProcessingStrategy = "EXECUTE_REMEDIATION"
+	}
+
+	// Set gang discovery defaults
+	if fileConfig.GangDiscovery.Labels.GangIDLabel == "" {
+		fileConfig.GangDiscovery.Labels.GangIDLabel = "app.kubernetes.io/gang-id"
+	}
+
+	if fileConfig.GangDiscovery.Labels.GangSizeLabel == "" {
+		fileConfig.GangDiscovery.Labels.GangSizeLabel = "app.kubernetes.io/gang-size"
+	}
+
+	// Set gang coordination defaults
+	if fileConfig.GangCoordination.Timeout == 0 {
+		fileConfig.GangCoordination.Timeout = 10 * time.Minute
+	}
+
+	if fileConfig.GangCoordination.MasterPort == 0 {
+		fileConfig.GangCoordination.MasterPort = 29500
+	}
+
+	if fileConfig.GangCoordination.ConfigMapMountPath == "" {
+		fileConfig.GangCoordination.ConfigMapMountPath = "/etc/preflight"
 	}
 
 	return &Config{FileConfig: fileConfig}, nil

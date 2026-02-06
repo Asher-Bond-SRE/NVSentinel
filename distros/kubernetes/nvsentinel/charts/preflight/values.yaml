@@ -113,6 +113,28 @@ gpuResourceNames:
 networkResourceNames:
   - "nvidia.com/mlnxnics"
 
+# Gang discovery configuration for multi-node preflight checks.
+# Discovery uses chain-of-responsibility: Volcano -> Kueue -> Labels.
+# Each discoverer checks if it can handle a pod based on annotations/labels present.
+gangDiscovery:
+  # Label-based discovery configuration (fallback when Volcano/Kueue not detected)
+  labels:
+    # Label key that identifies the gang
+    gangIdLabel: "app.kubernetes.io/gang-id"
+    # Label key that specifies expected gang size (optional)
+    gangSizeLabel: "app.kubernetes.io/gang-size"
+
+# Gang coordination configuration for multi-node checks (e.g., nccl-allreduce)
+gangCoordination:
+  # Enable gang coordination (required for gang-wide checks)
+  enabled: false
+  # Maximum time to wait for all gang members to register
+  timeout: "10m"
+  # Port for PyTorch distributed TCP bootstrap (torchrun)
+  masterPort: 29500
+  # Path where gang ConfigMap is mounted in init containers
+  configMapMountPath: "/etc/preflight"
+
 # Label-based namespace selection
 # Enable preflight in a namespace: kubectl label namespace <name> nvsentinel.nvidia.com/preflight=enabled
 namespaceSelector:
