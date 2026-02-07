@@ -32,17 +32,22 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/spf13/pflag"
+	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
-	"github.com/nvidia/nvsentinel/pkg/deviceapiserver"
-	"github.com/nvidia/nvsentinel/pkg/version"
+	"github.com/nvidia/nvsentinel/pkg/controlplane/apiserver"
+	"github.com/nvidia/nvsentinel/pkg/controlplane/apiserver/options"
+	"github.com/nvidia/nvsentinel/pkg/storage/storagebackend"
+	"github.com/nvidia/nvsentinel/pkg/util/version"
+
+	// Import service providers so their init() functions register them.
+	_ "github.com/nvidia/nvsentinel/pkg/services/device/v1alpha1"
 )
 
 const (
@@ -51,109 +56,128 @@ const (
 )
 
 func main() {
-	// Create config with defaults
-	config := deviceapiserver.DefaultConfig()
+	opts := options.NewOptions()
 
-	// Initialize klog flags first
-	klog.InitFlags(nil)
+	fss := cliflag.NamedFlagSets{}
+	opts.AddFlags(&fss)
 
-	// Bind our flags
-	showVersion := flag.Bool("version", false, "Show version and exit")
+	// Add a version flag to the global flag set.
+	showVersion := pflag.Bool("version", false, "Show version and exit")
 
-	// Manual duration flags (since BindFlags can't handle them properly)
-	var shutdownTimeout, shutdownDelay int
-	flag.StringVar(&config.GRPCAddress, "grpc-address", config.GRPCAddress,
-		"TCP address for gRPC server (e.g., :50051)")
-	flag.StringVar(&config.UnixSocket, "unix-socket", config.UnixSocket,
-		"Path to Unix socket for node-local IPC (empty to disable)")
-	flag.IntVar(&config.HealthPort, "health-port", config.HealthPort,
-		"Port for HTTP health endpoints (/healthz, /readyz)")
-	flag.IntVar(&config.MetricsPort, "metrics-port", config.MetricsPort,
-		"Port for Prometheus metrics (/metrics)")
-	flag.IntVar(&shutdownTimeout, "shutdown-timeout", int(config.ShutdownTimeout.Seconds()),
-		"Maximum time in seconds to wait for graceful shutdown")
-	flag.IntVar(&shutdownDelay, "shutdown-delay", int(config.ShutdownDelay.Seconds()),
-		"Time in seconds to wait before starting shutdown (for k8s readiness propagation)")
-	flag.StringVar(&config.LogFormat, "log-format", config.LogFormat,
-		"Log output format: text or json")
-	flag.StringVar(&config.NodeName, "node-name", config.NodeName,
-		"Kubernetes node name (defaults to NODE_NAME env var)")
-
-	// Set klog JSON format before Parse so it takes effect during initialization.
-	// The --log-format flag default is "json"; users can override via CLI.
-	if config.LogFormat == "json" {
-		_ = flag.Set("logging_format", "json")
+	// Merge all named flag sets into the global pflag command line.
+	for _, fs := range fss.FlagSets {
+		pflag.CommandLine.AddFlagSet(fs)
 	}
 
-	flag.Parse()
+	pflag.Parse()
 
-	// Apply duration conversions
-	config.ShutdownTimeout = time.Duration(shutdownTimeout) * time.Second
-	config.ShutdownDelay = time.Duration(shutdownDelay) * time.Second
-
-	// Apply environment overrides
-	config.ApplyEnvironment()
-
-	// Re-apply JSON logging if --log-format was explicitly set via CLI
-	if config.LogFormat == "json" {
-		_ = flag.Set("logging_format", "json")
-	}
-
-	// Handle version flag
+	// Handle version flag before any other initialization.
 	if *showVersion {
 		v := version.Get()
-		if config.LogFormat == "json" {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(v); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to encode version: %v\n", err)
-				os.Exit(1)
-			}
-		} else {
-			fmt.Println(v.String())
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(v); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to encode version: %v\n", err)
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
-	// Validate configuration
-	if err := config.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
+	// Set up signal handling for graceful shutdown.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	// Complete fills in defaults and resolves environment overrides.
+	completedOpts, err := opts.Complete(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to complete options: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create root logger with component name
-	logger := klog.Background().WithName(ComponentName)
-	if config.NodeName != "" {
-		logger = logger.WithValues("node", config.NodeName)
+	// Validate rejects invalid flag combinations.
+	if errs := completedOpts.Validate(); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", e)
+		}
+		os.Exit(1)
 	}
 
-	ctx := klog.NewContext(context.Background(), logger)
+	// Create root logger with component name.
+	logger := klog.Background().WithName(ComponentName)
+	ctx = klog.NewContext(ctx, logger)
 
-	// Log startup
 	versionInfo := version.Get()
 	logger.Info("Starting server",
-		"version", versionInfo.Version,
+		"version", versionInfo.GitVersion,
 		"commit", versionInfo.GitCommit,
 		"buildDate", versionInfo.BuildDate,
-		"config", map[string]interface{}{
-			"grpcAddress":     config.GRPCAddress,
-			"unixSocket":      config.UnixSocket,
-			"healthPort":      config.HealthPort,
-			"metricsPort":     config.MetricsPort,
-			"shutdownTimeout": config.ShutdownTimeout.String(),
-			"shutdownDelay":   config.ShutdownDelay.String(),
-			"logFormat":       config.LogFormat,
-		},
 	)
 
-	// Set up signal handling for graceful shutdown
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
+	// Build the apiserver configuration from completed options.
+	apiserverConfig, err := apiserver.NewConfig(ctx, completedOpts)
+	if err != nil {
+		logger.Error(err, "Failed to create apiserver config")
+		os.Exit(1)
+	}
 
-	// Create and start server
-	server := deviceapiserver.New(config, logger)
-	if err := server.Start(ctx); err != nil {
-		logger.Error(err, "Server error")
+	completedAPIServerConfig, err := apiserverConfig.Complete()
+	if err != nil {
+		logger.Error(err, "Failed to complete apiserver config")
+		os.Exit(1)
+	}
+
+	// Build the storage backend configuration from completed options.
+	storageConfig, err := storagebackend.NewConfig(ctx, completedOpts.Storage)
+	if err != nil {
+		logger.Error(err, "Failed to create storage config")
+		os.Exit(1)
+	}
+
+	completedStorageConfig, err := storageConfig.Complete()
+	if err != nil {
+		logger.Error(err, "Failed to complete storage config")
+		os.Exit(1)
+	}
+
+	storage, err := completedStorageConfig.New()
+	if err != nil {
+		logger.Error(err, "Failed to create storage backend")
+		os.Exit(1)
+	}
+
+	preparedStorage, err := storage.PrepareRun(ctx)
+	if err != nil {
+		logger.Error(err, "Failed to prepare storage backend")
+		os.Exit(1)
+	}
+
+	// Run the storage backend in the background.
+	storageErrCh := make(chan error, 1)
+	go func() {
+		storageErrCh <- preparedStorage.Run(ctx)
+	}()
+
+	// Create, prepare, and run the device API server.
+	server, err := completedAPIServerConfig.New(storage)
+	if err != nil {
+		logger.Error(err, "Failed to create device API server")
+		os.Exit(1)
+	}
+
+	prepared, err := server.PrepareRun(ctx)
+	if err != nil {
+		logger.Error(err, "Failed to prepare device API server")
+		os.Exit(1)
+	}
+
+	if err := prepared.Run(ctx); err != nil {
+		logger.Error(err, "Device API server error")
+		os.Exit(1)
+	}
+
+	// Check if the storage backend exited with an error.
+	if err := <-storageErrCh; err != nil {
+		logger.Error(err, "Storage backend error")
 		os.Exit(1)
 	}
 
