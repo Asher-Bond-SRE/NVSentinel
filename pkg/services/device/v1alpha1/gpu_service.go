@@ -359,7 +359,10 @@ func (s *gpuService) UpdateGpuStatus(ctx context.Context, req *pb.UpdateGpuStatu
 		return nil, status.Error(codes.InvalidArgument, "status is required")
 	}
 
-	// UpdateGpuStatusRequest has no Namespace field; default to "default".
+	// TODO(#720): UpdateGpuStatusRequest has no Namespace field in the proto
+	// definition. All status updates target the "default" namespace. GPUs
+	// created in other namespaces cannot have their status updated via this
+	// RPC until the proto is extended with a namespace field.
 	ns := "default"
 	name := req.GetName()
 	key := s.storageKey(ns, name)
