@@ -14,6 +14,11 @@
 
 package nvml
 
+import (
+	"strconv"
+	"strings"
+)
+
 // XID errors documentation:
 // https://docs.nvidia.com/deploy/xid-errors/index.html
 
@@ -133,37 +138,30 @@ func xidToString(xid uint64) string {
 	return "Unknown XID"
 }
 
-// ParseIgnoredXids parses a comma-separated string of XID values.
-//
-// Invalid values are skipped with a warning log.
+// ParseIgnoredXids parses a comma-or-space-separated string of XID values.
+// Non-numeric tokens are silently skipped.
 func ParseIgnoredXids(input string) []uint64 {
 	if input == "" {
 		return nil
 	}
 
-	var (
-		result   []uint64
-		current  uint64
-		hasDigit bool
-	)
+	var result []uint64
 
-	for _, ch := range input {
-		switch {
-		case ch >= '0' && ch <= '9':
-			current = current*10 + uint64(ch-'0')
-			hasDigit = true
-		case ch == ',' || ch == ' ':
-			if hasDigit {
-				result = append(result, current)
-				current = 0
-				hasDigit = false
-			}
+	tokens := strings.FieldsFunc(input, func(r rune) bool {
+		return r == ',' || r == ' '
+	})
+
+	for _, tok := range tokens {
+		v, err := strconv.ParseUint(tok, 10, 64)
+		if err != nil {
+			continue
 		}
+
+		result = append(result, v)
 	}
 
-	// Don't forget the last value
-	if hasDigit {
-		result = append(result, current)
+	if len(result) == 0 {
+		return nil
 	}
 
 	return result

@@ -170,6 +170,16 @@ func TestParseIgnoredXids(t *testing.T) {
 			input:    ",48,63",
 			expected: []uint64{48, 63},
 		},
+		{
+			name:     "non-numeric characters mixed in",
+			input:    "4a8,63",
+			expected: []uint64{63},
+		},
+		{
+			name:     "completely non-numeric",
+			input:    "abc",
+			expected: nil,
+		},
 	}
 
 	for _, tt := range tests {
