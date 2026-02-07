@@ -224,7 +224,7 @@ func (s *DeviceAPIServer) serveHealth(ctx context.Context) {
 
 	serveErr := s.AdminServer.Serve(lis)
 	if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) && !errors.Is(serveErr, net.ErrClosed) {
-		logger.Error(err, "Health server stopped unexpectedly")
+		logger.Error(serveErr, "Health server stopped unexpectedly")
 	}
 }
 
@@ -271,7 +271,7 @@ func (s *DeviceAPIServer) serveMetrics(ctx context.Context) {
 
 	serveErr := metricsSrv.Serve(lis)
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) && !errors.Is(serveErr, net.ErrClosed) {
-		logger.Error(err, "Metrics server stopped unexpectedly", "address", s.MetricsAddress)
+		logger.Error(serveErr, "Metrics server stopped unexpectedly", "address", s.MetricsAddress)
 	}
 }
 
