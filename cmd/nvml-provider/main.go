@@ -572,6 +572,16 @@ func (p *Provider) handleXIDEvent(data nvml.EventData) {
 		"eventType", data.EventType,
 	)
 
+	// Skip ignored XIDs (application-level errors, not hardware failures).
+	// This matches the in-process provider behavior in pkg/providers/nvml/health_monitor.go.
+	if nvmlpkg.IsDefaultIgnored(xid) {
+		p.logger.V(2).Info("Ignoring non-critical XID",
+			"uuid", uuid,
+			"xid", xid,
+		)
+		return
+	}
+
 	// Update GPU status
 	status := nvmlpkg.ConditionStatusTrue
 	reason := "Healthy"
