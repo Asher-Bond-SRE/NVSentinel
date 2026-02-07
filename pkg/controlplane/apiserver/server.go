@@ -147,8 +147,12 @@ func (s *DeviceAPIServer) run(ctx context.Context) error {
 	}
 
 	if s.MetricsAddress != "" {
-		// TODO: put in wg??
-		go s.serveMetrics(ctx)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+
+			s.serveMetrics(ctx)
+		}()
 	}
 
 	if err := s.waitForStorage(ctx); err != nil {
