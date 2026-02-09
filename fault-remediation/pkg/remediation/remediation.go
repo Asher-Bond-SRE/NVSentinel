@@ -563,32 +563,47 @@ func (c *FaultRemediationClient) checkLogCollectorFailed(
 
 	// reconciliation can be called multiple times so use annotation to make sure we're not duplicate recording metrics
 	if job.Annotations == nil || job.Annotations[jobMetricsAlreadyCountedAnnotation] != trueStringVal {
-		updateJob := job.DeepCopy()
-		if updateJob.Annotations == nil {
-			updateJob.Annotations = map[string]string{}
-		}
-
-		updateJob.Annotations[jobMetricsAlreadyCountedAnnotation] = trueStringVal
-
-		err := c.client.Update(ctx, updateJob)
-		if err != nil {
+		if err := c.recordLogCollectorFailureMetrics(ctx, job, nodeName); err != nil {
 			return false, err
 		}
-
-		// Use job's actual duration for failed jobs too
-		var duration float64
-		if job.Status.CompletionTime != nil {
-			duration = job.Status.CompletionTime.Sub(job.Status.StartTime.Time).Seconds()
-		} else {
-			duration = time.Since(job.Status.StartTime.Time).Seconds()
-		}
-
-		metrics.LogCollectorJobs.WithLabelValues(nodeName, "failure").Inc()
-		metrics.LogCollectorJobDuration.WithLabelValues(nodeName, "failure").Observe(duration)
 	}
 
 	// dont return error so reconciliation can continue
 	return true, nil
+}
+
+// recordLogCollectorFailureMetrics updates the job annotation and records failure metrics.
+func (c *FaultRemediationClient) recordLogCollectorFailureMetrics(
+	ctx context.Context,
+	job batchv1.Job,
+	nodeName string,
+) error {
+	updateJob := job.DeepCopy()
+	if updateJob.Annotations == nil {
+		updateJob.Annotations = map[string]string{}
+	}
+
+	updateJob.Annotations[jobMetricsAlreadyCountedAnnotation] = trueStringVal
+
+	if err := c.client.Update(ctx, updateJob); err != nil {
+		return err
+	}
+
+	var duration float64
+
+	switch {
+	case job.Status.StartTime == nil:
+		duration = 0
+	case job.Status.CompletionTime != nil:
+		duration = job.Status.CompletionTime.Sub(job.Status.StartTime.Time).Seconds()
+	default:
+		duration = time.Since(job.Status.StartTime.Time).Seconds()
+	}
+
+	metrics.LogCollectorJobs.WithLabelValues(nodeName, "failure").Inc()
+	metrics.LogCollectorJobDuration.WithLabelValues(nodeName, "failure").Observe(duration)
+
+	return nil
 }
 
 func (c *FaultRemediationClient) checkLogCollectorTimedOut(

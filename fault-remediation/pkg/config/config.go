@@ -166,8 +166,8 @@ func validateOneSupersedingGroup(actionName, group string, resource MaintenanceR
 		}
 
 		if len(maintenanceResource.ImpactedEntityScope) != 0 {
-			return fmt.Errorf("supersedingEquivalenceGroup %s cannot have an impactedEntityScopes: %s",
-				maintenanceResource.EquivalenceGroup, maintenanceResource.ImpactedEntityScope)
+			return fmt.Errorf("action '%s': supersedingEquivalenceGroup %s cannot have an impactedEntityScope: %s",
+				actionName, maintenanceResource.EquivalenceGroup, maintenanceResource.ImpactedEntityScope)
 		}
 
 		foundGroup = true
@@ -176,11 +176,13 @@ func validateOneSupersedingGroup(actionName, group string, resource MaintenanceR
 	}
 
 	if !foundGroup {
-		return fmt.Errorf("superseding EquivalenceGroup %s must be defined in config", group)
+		return fmt.Errorf("action '%s': superseding EquivalenceGroup %s must be defined in config",
+			actionName, group)
 	}
 
 	if group == resource.EquivalenceGroup {
-		return fmt.Errorf("SupersedingEquivalenceGroup cannot include the EquivalenceGroup itself: %s", group)
+		return fmt.Errorf("action '%s': SupersedingEquivalenceGroup cannot include the EquivalenceGroup itself: %s",
+			actionName, group)
 	}
 
 	return nil
