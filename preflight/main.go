@@ -103,16 +103,10 @@ func run() error {
 			return fmt.Errorf("gangDiscovery.scheduler is required when gangCoordination.enabled is true")
 		}
 
-		labelConfig := gang.LabelDiscovererConfig{
-			GangIDLabel:   cfg.GangDiscovery.Labels.GangIDLabel,
-			GangSizeLabel: cfg.GangDiscovery.Labels.GangSizeLabel,
-		}
-
 		discoverer, err = gang.NewDiscoverer(
 			gang.Scheduler(cfg.GangDiscovery.Scheduler),
 			kubeClient,
 			dynamicClient,
-			labelConfig,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create gang discoverer: %w", err)

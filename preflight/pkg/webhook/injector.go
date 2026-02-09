@@ -64,18 +64,26 @@ func (i *Injector) InjectInitContainers(pod *corev1.Pod) ([]PatchOperation, *Gan
 
 	// Check if pod is part of a gang
 	var gangCtx *GangContext
-	if i.cfg.GangCoordination.Enabled && i.discoverer != nil && i.discoverer.CanHandle(pod) {
-		gangID := i.discoverer.ExtractGangID(pod)
-		if gangID != "" {
-			gangCtx = &GangContext{
-				GangID:        gangID,
-				ConfigMapName: gang.ConfigMapName(gangID),
+	if i.cfg.GangCoordination.Enabled && i.discoverer != nil {
+		if i.discoverer.CanHandle(pod) {
+			gangID := i.discoverer.ExtractGangID(pod)
+			if gangID != "" {
+				gangCtx = &GangContext{
+					GangID:        gangID,
+					ConfigMapName: gang.ConfigMapName(gangID),
+				}
+				slog.Info("Pod is part of a gang",
+					"pod", pod.Name,
+					"namespace", pod.Namespace,
+					"gangID", gangID,
+					"configMap", gangCtx.ConfigMapName,
+					"discoverer", i.discoverer.Name())
 			}
-			slog.Info("Pod is part of a gang",
+		} else {
+			slog.Debug("Pod not handled by gang discoverer",
 				"pod", pod.Name,
 				"namespace", pod.Namespace,
-				"gangID", gangID,
-				"configMap", gangCtx.ConfigMapName)
+				"discoverer", i.discoverer.Name())
 		}
 	}
 

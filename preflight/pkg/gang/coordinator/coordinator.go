@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gang
+package coordinator
 
 import (
 	"context"
@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nvidia/nvsentinel/preflight/pkg/gang/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -91,7 +93,6 @@ func NewCoordinator(kubeClient kubernetes.Interface, config CoordinatorConfig) *
 	}
 }
 
-
 // MaxLength is the maximum length of a Kubernetes label value.
 const MaxLength = 63
 
@@ -152,7 +153,7 @@ func ConfigMapName(gangID string) string {
 
 // RegisterPeer registers a pod as a peer in the gang ConfigMap.
 // Creates the ConfigMap if it doesn't exist.
-func (c *Coordinator) RegisterPeer(ctx context.Context, namespace string, gangInfo *GangInfo, peer PeerInfo) error {
+func (c *Coordinator) RegisterPeer(ctx context.Context, namespace string, gangInfo *types.GangInfo, peer types.PeerInfo) error {
 	if gangInfo == nil {
 		return fmt.Errorf("gangInfo is required")
 	}
@@ -234,8 +235,8 @@ func (c *Coordinator) GetGangConfigMap(ctx context.Context, namespace, gangID st
 
 // ParsePeers parses the peers string from a ConfigMap into a slice of PeerInfo.
 // Format: "podName:podIP:rank" per line (rank is optional for backwards compatibility).
-func ParsePeers(peersData string) []PeerInfo {
-	var peers []PeerInfo
+func ParsePeers(peersData string) []types.PeerInfo {
+	var peers []types.PeerInfo
 
 	lines := strings.Split(strings.TrimSpace(peersData), "\n")
 	for _, line := range lines {
@@ -249,7 +250,7 @@ func ParsePeers(peersData string) []PeerInfo {
 			continue
 		}
 
-		peers = append(peers, PeerInfo{
+		peers = append(peers, types.PeerInfo{
 			PodName: strings.TrimSpace(parts[0]),
 			PodIP:   strings.TrimSpace(parts[1]),
 		})
@@ -259,7 +260,7 @@ func ParsePeers(peersData string) []PeerInfo {
 }
 
 // GetRank returns the rank of a pod in the gang based on alphabetical ordering.
-func GetRank(podName string, peers []PeerInfo) int {
+func GetRank(podName string, peers []types.PeerInfo) int {
 	names := make([]string, len(peers))
 	for i, p := range peers {
 		names[i] = p.PodName
@@ -294,7 +295,7 @@ func (c *Coordinator) DeleteGangConfigMap(ctx context.Context, namespace, gangID
 }
 
 // createConfigMap creates a new ConfigMap for gang coordination.
-func (c *Coordinator) createConfigMap(name, namespace string, gangInfo *GangInfo) *corev1.ConfigMap {
+func (c *Coordinator) createConfigMap(name, namespace string, gangInfo *types.GangInfo) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -315,7 +316,7 @@ func (c *Coordinator) createConfigMap(name, namespace string, gangInfo *GangInfo
 }
 
 // addPeerToConfigMap adds a peer to the ConfigMap's peer list.
-func (c *Coordinator) addPeerToConfigMap(cm *corev1.ConfigMap, peer PeerInfo) {
+func (c *Coordinator) addPeerToConfigMap(cm *corev1.ConfigMap, peer types.PeerInfo) {
 	if cm.Data == nil {
 		cm.Data = make(map[string]string)
 	}

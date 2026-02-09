@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gang
+package discoverer
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/nvidia/nvsentinel/preflight/pkg/gang/types"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,8 +33,11 @@ const (
 	// VolcanoPodGroupAnnotation is the annotation used by Volcano to identify pod groups.
 	VolcanoPodGroupAnnotation = "volcano.sh/pod-group"
 
-	// VolcanoQueueNameAnnotation is the annotation for the Volcano queue name.
-	VolcanoQueueNameAnnotation = "volcano.sh/queue-name"
+	// SchedulingGroupNameAnnotation is used by Volcano Jobs (batch.volcano.sh/Job).
+	SchedulingGroupNameAnnotation = "scheduling.k8s.io/group-name"
+
+	// VolcanoJobNameLabel is the label set on pods created by Volcano Jobs.
+	VolcanoJobNameLabel = "volcano.sh/job-name"
 )
 
 // VolcanoPodGroupGVR is the GroupVersionResource for Volcano PodGroups.
@@ -61,24 +66,16 @@ func (v *VolcanoDiscoverer) Name() string {
 	return "volcano"
 }
 
-// CanHandle returns true if the pod has a Volcano pod-group annotation.
+// CanHandle returns true if the pod belongs to a Volcano gang.
+// Checks multiple identifiers: volcano.sh/pod-group annotation,
+// scheduling.k8s.io/group-name annotation, or volcano.sh/job-name label.
 func (v *VolcanoDiscoverer) CanHandle(pod *corev1.Pod) bool {
-	if pod.Annotations == nil {
-		return false
-	}
-
-	_, ok := pod.Annotations[VolcanoPodGroupAnnotation]
-
-	return ok
+	return v.getPodGroupName(pod) != ""
 }
 
-// ExtractGangID extracts the gang identifier from a pod's Volcano annotation.
+// ExtractGangID extracts the gang identifier from a Volcano pod.
 func (v *VolcanoDiscoverer) ExtractGangID(pod *corev1.Pod) string {
-	if pod.Annotations == nil {
-		return ""
-	}
-
-	podGroupName := pod.Annotations[VolcanoPodGroupAnnotation]
+	podGroupName := v.getPodGroupName(pod)
 	if podGroupName == "" {
 		return ""
 	}
@@ -86,16 +83,42 @@ func (v *VolcanoDiscoverer) ExtractGangID(pod *corev1.Pod) string {
 	return fmt.Sprintf("volcano-%s-%s", pod.Namespace, podGroupName)
 }
 
+// getPodGroupName extracts the pod group name from various Volcano identifiers.
+func (v *VolcanoDiscoverer) getPodGroupName(pod *corev1.Pod) string {
+	// Check volcano.sh/pod-group annotation (standard PodGroup)
+	if pod.Annotations != nil {
+		if name := pod.Annotations[VolcanoPodGroupAnnotation]; name != "" {
+			return name
+		}
+		// Check scheduling.k8s.io/group-name annotation (Volcano Job)
+		if name := pod.Annotations[SchedulingGroupNameAnnotation]; name != "" {
+			return name
+		}
+	}
+
+	// Check volcano.sh/job-name label (Volcano Job pods)
+	if pod.Labels != nil {
+		if name := pod.Labels[VolcanoJobNameLabel]; name != "" {
+			return name
+		}
+	}
+
+	return ""
+}
+
 // DiscoverPeers finds all pods in the same Volcano PodGroup.
-func (v *VolcanoDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) (*GangInfo, error) {
-	if !v.CanHandle(pod) {
+func (v *VolcanoDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) (*types.GangInfo, error) {
+	podGroupName := v.getPodGroupName(pod)
+	if podGroupName == "" {
+		slog.Debug("Pod not handled by Volcano discoverer",
+			"pod", pod.Name,
+			"namespace", pod.Namespace)
 		return nil, nil
 	}
 
-	podGroupName := pod.Annotations[VolcanoPodGroupAnnotation]
 	gangID := v.ExtractGangID(pod)
 
-	slog.Debug("Discovering Volcano gang",
+	slog.Info("Discovering Volcano gang",
 		"pod", pod.Name,
 		"namespace", pod.Namespace,
 		"podGroup", podGroupName,
@@ -109,22 +132,19 @@ func (v *VolcanoDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) 
 			"error", err)
 	}
 
-	// List all pods with the same pod-group annotation in the namespace
+	// List all pods in the namespace
 	pods, err := v.kubeClient.CoreV1().Pods(pod.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pods in namespace %s: %w", pod.Namespace, err)
 	}
 
-	var peers []PeerInfo
+	var peers []types.PeerInfo
 
 	for i := range pods.Items {
 		p := &pods.Items[i]
 
-		if p.Annotations == nil {
-			continue
-		}
-
-		if p.Annotations[VolcanoPodGroupAnnotation] != podGroupName {
+		// Check if this pod belongs to the same gang
+		if v.getPodGroupName(p) != podGroupName {
 			continue
 		}
 
@@ -133,7 +153,7 @@ func (v *VolcanoDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) 
 			continue
 		}
 
-		peers = append(peers, PeerInfo{
+		peers = append(peers, types.PeerInfo{
 			PodName:   p.Name,
 			PodIP:     p.Status.PodIP,
 			NodeName:  p.Spec.NodeName,
@@ -142,6 +162,10 @@ func (v *VolcanoDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) 
 	}
 
 	if len(peers) == 0 {
+		slog.Warn("No peers found for Volcano gang",
+			"pod", pod.Name,
+			"podGroup", podGroupName,
+			"gangID", gangID)
 		return nil, nil
 	}
 
@@ -156,7 +180,7 @@ func (v *VolcanoDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) 
 		"expectedCount", expectedCount,
 		"discoveredPeers", len(peers))
 
-	return &GangInfo{
+	return &types.GangInfo{
 		GangID:           gangID,
 		ExpectedMinCount: expectedCount,
 		Peers:            peers,

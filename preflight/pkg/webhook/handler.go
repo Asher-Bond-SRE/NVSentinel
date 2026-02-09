@@ -151,7 +151,7 @@ func (h *Handler) mutate(req *admissionv1.AdmissionRequest) *admissionv1.Admissi
 	}
 
 	if patch == nil {
-		slog.Debug("No mutation needed", "pod", pod.Name, "gangID", gangCtxGangID(gangCtx))
+		slog.Debug("No mutation needed", "pod", pod.Name, "namespace", req.Namespace)
 
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
@@ -170,11 +170,10 @@ func (h *Handler) mutate(req *admissionv1.AdmissionRequest) *admissionv1.Admissi
 		}
 	}
 
-	slog.Info("Injecting preflight init containers",
+	slog.Info("Mutating pod",
 		"namespace", req.Namespace,
 		"pod", pod.Name,
-		"initContainers", len(h.injector.cfg.InitContainers),
-		"gangID", gangCtxGangID(gangCtx))
+		"patchOps", len(patch))
 
 	patchType := admissionv1.PatchTypeJSONPatch
 
@@ -183,12 +182,4 @@ func (h *Handler) mutate(req *admissionv1.AdmissionRequest) *admissionv1.Admissi
 		Patch:     patchBytes,
 		PatchType: &patchType,
 	}
-}
-
-func gangCtxGangID(ctx *GangContext) string {
-	if ctx == nil {
-		return ""
-	}
-
-	return ctx.GangID
 }

@@ -12,28 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gang
+package discoverer
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 
+	"github.com/nvidia/nvsentinel/preflight/pkg/gang/types"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
-
-// WorkloadGVR is the GroupVersionResource for K8s 1.35+ Workload API.
-// See: https://kubernetes.io/blog/2025/12/29/kubernetes-v1-35-introducing-workload-aware-scheduling/
-var WorkloadGVR = schema.GroupVersionResource{
-	Group:    "scheduling.k8s.io",
-	Version:  "v1alpha1",
-	Resource: "workloads",
-}
 
 // WorkloadRefDiscoverer discovers gang members using K8s 1.35+ native workloadRef.
 // Pods are linked to Workloads via spec.workloadRef:
@@ -43,15 +34,13 @@ var WorkloadGVR = schema.GroupVersionResource{
 //	    name: training-job-workload
 //	    podGroup: workers
 type WorkloadRefDiscoverer struct {
-	kubeClient    kubernetes.Interface
-	dynamicClient dynamic.Interface
+	kubeClient kubernetes.Interface
 }
 
 // NewWorkloadRefDiscoverer creates a new workloadRef gang discoverer.
-func NewWorkloadRefDiscoverer(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface) *WorkloadRefDiscoverer {
+func NewWorkloadRefDiscoverer(kubeClient kubernetes.Interface) *WorkloadRefDiscoverer {
 	return &WorkloadRefDiscoverer{
-		kubeClient:    kubeClient,
-		dynamicClient: dynamicClient,
+		kubeClient: kubeClient,
 	}
 }
 
@@ -63,7 +52,6 @@ func (w *WorkloadRefDiscoverer) Name() string {
 func (w *WorkloadRefDiscoverer) CanHandle(pod *corev1.Pod) bool {
 	// Check if pod has workloadRef in spec
 	// Note: As of K8s 1.35, workloadRef is a new field in PodSpec
-	// We check via unstructured since it may not be in client-go types yet
 	return getWorkloadRefName(pod) != ""
 }
 
@@ -84,7 +72,7 @@ func (w *WorkloadRefDiscoverer) ExtractGangID(pod *corev1.Pod) string {
 }
 
 // DiscoverPeers finds all pods with the same workloadRef.
-func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) (*GangInfo, error) {
+func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) (*types.GangInfo, error) {
 	if !w.CanHandle(pod) {
 		return nil, nil
 	}
@@ -114,7 +102,7 @@ func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.P
 		return nil, fmt.Errorf("failed to list pods in namespace %s: %w", pod.Namespace, err)
 	}
 
-	var peers []PeerInfo
+	var peers []types.PeerInfo
 
 	for i := range pods.Items {
 		p := &pods.Items[i]
@@ -137,7 +125,7 @@ func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.P
 			continue
 		}
 
-		peers = append(peers, PeerInfo{
+		peers = append(peers, types.PeerInfo{
 			PodName:   p.Name,
 			PodIP:     p.Status.PodIP,
 			NodeName:  p.Spec.NodeName,
@@ -161,7 +149,7 @@ func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.P
 		"expectedMinCount", expectedMinCount,
 		"discoveredPeers", len(peers))
 
-	return &GangInfo{
+	return &types.GangInfo{
 		GangID:           gangID,
 		ExpectedMinCount: expectedMinCount,
 		Peers:            peers,
@@ -170,40 +158,20 @@ func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.P
 
 // getWorkloadMinCount retrieves the minCount from a Workload's podGroup gang policy.
 func (w *WorkloadRefDiscoverer) getWorkloadMinCount(ctx context.Context, namespace, name, podGroup string) (int, error) {
-	if w.dynamicClient == nil {
-		return 0, fmt.Errorf("dynamic client not configured")
-	}
-
-	workload, err := w.dynamicClient.Resource(WorkloadGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	workload, err := w.kubeClient.SchedulingV1alpha1().Workloads(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to get Workload %s/%s: %w", namespace, name, err)
 	}
 
-	// Navigate: spec.podGroups[].policy.gang.minCount
-	podGroups, found, err := unstructured.NestedSlice(workload.Object, "spec", "podGroups")
-	if err != nil || !found {
-		return 0, fmt.Errorf("failed to get podGroups from Workload: %w", err)
-	}
-
-	for _, pg := range podGroups {
-		pgMap, ok := pg.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		pgName, _, _ := unstructured.NestedString(pgMap, "name")
-
+	for _, pg := range workload.Spec.PodGroups {
 		// If podGroup specified, match it; otherwise take first one
-		if podGroup != "" && pgName != podGroup {
+		if podGroup != "" && pg.Name != podGroup {
 			continue
 		}
 
-		minCount, found, err := unstructured.NestedInt64(pgMap, "policy", "gang", "minCount")
-		if err != nil || !found {
-			continue
+		if pg.Policy.Gang != nil {
+			return int(pg.Policy.Gang.MinCount), nil
 		}
-
-		return int(minCount), nil
 	}
 
 	return 0, nil
@@ -212,18 +180,9 @@ func (w *WorkloadRefDiscoverer) getWorkloadMinCount(ctx context.Context, namespa
 // getWorkloadRefName extracts workloadRef.name from a pod.
 // Returns empty string if not present.
 func getWorkloadRefName(pod *corev1.Pod) string {
-	// workloadRef is a new field in K8s 1.35+
-	// Access via annotations as fallback for older client-go versions
-	if pod.Annotations != nil {
-		if name := pod.Annotations["scheduling.k8s.io/workload-name"]; name != "" {
-			return name
-		}
+	if pod.Spec.WorkloadRef != nil {
+		return pod.Spec.WorkloadRef.Name
 	}
-
-	// TODO: Once client-go is updated for K8s 1.35+, use:
-	// if pod.Spec.WorkloadRef != nil {
-	//     return pod.Spec.WorkloadRef.Name
-	// }
 
 	return ""
 }
@@ -231,16 +190,9 @@ func getWorkloadRefName(pod *corev1.Pod) string {
 // getWorkloadRefPodGroup extracts workloadRef.podGroup from a pod.
 // Returns empty string if not present.
 func getWorkloadRefPodGroup(pod *corev1.Pod) string {
-	if pod.Annotations != nil {
-		if pg := pod.Annotations["scheduling.k8s.io/workload-pod-group"]; pg != "" {
-			return pg
-		}
+	if pod.Spec.WorkloadRef != nil {
+		return pod.Spec.WorkloadRef.PodGroup
 	}
-
-	// TODO: Once client-go is updated for K8s 1.35+, use:
-	// if pod.Spec.WorkloadRef != nil {
-	//     return pod.Spec.WorkloadRef.PodGroup
-	// }
 
 	return ""
 }

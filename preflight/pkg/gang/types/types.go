@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gang provides pluggable gang discovery for preflight checks.
-// Gang discovery identifies all pods that belong to the same workload group
-// (e.g., for distributed training jobs that need coordinated preflight checks).
-package gang
+// Package types provides core types for gang discovery and coordination.
+package types
 
 import (
 	"context"
@@ -23,27 +21,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// PeerInfo contains information about a gang member pod.
 type PeerInfo struct {
-	// PodName is the name of the pod.
-	PodName string
-
-	// PodIP is the IP address of the pod.
-	PodIP string
-
-	// NodeName is the node where the pod is scheduled.
-	NodeName string
-
-	// Namespace is the namespace of the pod.
+	PodName   string
+	PodIP     string
+	NodeName  string
 	Namespace string
 }
 
-// GangInfo contains the full gang information.
 type GangInfo struct {
 	// GangID is the unique identifier for the gang.
 	GangID string
 
-	// ExpectedCount is the total number of pods expected in the gang.
+	// ExpectedMinCount is the total number of pods expected in the gang.
 	// This may be known from scheduler CRDs (e.g., Volcano's minMember,
 	// K8s Workload's minCount).
 	ExpectedMinCount int

@@ -17,6 +17,10 @@ package gang
 import (
 	"fmt"
 
+	"github.com/nvidia/nvsentinel/preflight/pkg/gang/coordinator"
+	"github.com/nvidia/nvsentinel/preflight/pkg/gang/discoverer"
+	"github.com/nvidia/nvsentinel/preflight/pkg/gang/types"
+
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
@@ -27,8 +31,24 @@ type Scheduler string
 const (
 	SchedulerKubernetes Scheduler = "kubernetes" // K8s 1.35+ native (Workload API)
 	SchedulerVolcano    Scheduler = "volcano"    // Volcano PodGroup
-	SchedulerKueue      Scheduler = "kueue"      // Kueue Workload
-	SchedulerLabels     Scheduler = "labels"     // Custom labels (any scheduler)
+)
+
+// Re-export types for convenience.
+type (
+	PeerInfo          = types.PeerInfo
+	GangInfo          = types.GangInfo
+	GangDiscoverer    = types.GangDiscoverer
+	Coordinator       = coordinator.Coordinator
+	CoordinatorConfig = coordinator.CoordinatorConfig
+)
+
+// Re-export coordinator functions.
+var (
+	ConfigMapName            = coordinator.ConfigMapName
+	NewCoordinator           = coordinator.NewCoordinator
+	DefaultCoordinatorConfig = coordinator.DefaultCoordinatorConfig
+	ParsePeers               = coordinator.ParsePeers
+	GetRank                  = coordinator.GetRank
 )
 
 // NewDiscoverer creates a gang discoverer for the specified scheduler.
@@ -36,18 +56,13 @@ func NewDiscoverer(
 	scheduler Scheduler,
 	kubeClient kubernetes.Interface,
 	dynamicClient dynamic.Interface,
-	labelConfig LabelDiscovererConfig,
 ) (GangDiscoverer, error) {
 	switch scheduler {
 	case SchedulerKubernetes:
-		return NewWorkloadRefDiscoverer(kubeClient, dynamicClient), nil
+		return discoverer.NewWorkloadRefDiscoverer(kubeClient), nil
 	case SchedulerVolcano:
-		return NewVolcanoDiscoverer(kubeClient, dynamicClient), nil
-	case SchedulerKueue:
-		return NewKueueDiscoverer(kubeClient), nil
-	case SchedulerLabels:
-		return NewLabelDiscoverer(kubeClient, labelConfig), nil
+		return discoverer.NewVolcanoDiscoverer(kubeClient, dynamicClient), nil
 	default:
-		return nil, fmt.Errorf("unknown scheduler: %q (valid: kubernetes, volcano, kueue, labels)", scheduler)
+		return nil, fmt.Errorf("unknown scheduler: %q (valid: kubernetes, volcano)", scheduler)
 	}
 }
