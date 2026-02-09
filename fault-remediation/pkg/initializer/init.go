@@ -79,7 +79,7 @@ func InitializeAll(
 	builder := client.GetPipelineBuilder()
 	pipeline := builder.BuildQuarantinedAndDrainedNodesPipeline()
 
-	ds, watcherInstance, healthEventStore, datastoreConfig, err := initDatastoreAndWatcher(ctx, tokenConfig, pipeline)
+	ds, watcherInstance, healthEventStore, datastoreConfig, err := initDatastoreAndWatcher(ctx, pipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,6 @@ func initRemediationAndStateManager(
 
 func initDatastoreAndWatcher(
 	ctx context.Context,
-	tokenConfig storeconfig.TokenConfig,
 	pipeline datastore.Pipeline,
 ) (datastore.DataStore, datastore.ChangeStreamWatcher, datastore.HealthEventStore, *datastore.DataStoreConfig, error) {
 	datastoreConfig, err := datastore.LoadDatastoreConfig()
