@@ -171,8 +171,6 @@ func validateOneSupersedingGroup(actionName, group string, resource MaintenanceR
 		}
 
 		foundGroup = true
-
-		break
 	}
 
 	if !foundGroup {
