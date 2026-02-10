@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -151,6 +152,46 @@ func ConfigMapName(gangID string) string {
 	return ConfigMapPrefix + truncatedName + "-" + hashSuffix
 }
 
+// EnsureConfigMap creates the gang ConfigMap if it doesn't exist.
+// This should be called early (e.g., during admission) to ensure the ConfigMap
+// exists before pods try to mount it.
+func (c *Coordinator) EnsureConfigMap(
+	ctx context.Context,
+	namespace string,
+	gangID string,
+	expectedMinCount int,
+) error {
+	configMapName := ConfigMapName(gangID)
+
+	// Check if it already exists
+	_, err := c.kubeClient.CoreV1().ConfigMaps(namespace).Get(ctx, configMapName, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+
+	if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to check ConfigMap %s: %w", configMapName, err)
+	}
+
+	gangInfo := &types.GangInfo{
+		GangID:           gangID,
+		ExpectedMinCount: expectedMinCount,
+	}
+	cm := c.createConfigMap(configMapName, namespace, gangInfo)
+
+	_, err = c.kubeClient.CoreV1().ConfigMaps(namespace).Create(ctx, cm, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ConfigMap %s: %w", configMapName, err)
+	}
+
+	slog.Info("Created gang ConfigMap",
+		"configMap", configMapName,
+		"namespace", namespace,
+		"gangID", gangID)
+
+	return nil
+}
+
 // RegisterPeer registers a pod as a peer in the gang ConfigMap.
 // Creates the ConfigMap if it doesn't exist.
 func (c *Coordinator) RegisterPeer(
@@ -163,6 +204,10 @@ func (c *Coordinator) RegisterPeer(
 		return fmt.Errorf("gangInfo is required")
 	}
 
+	if err := c.EnsureConfigMap(ctx, namespace, gangInfo.GangID, gangInfo.ExpectedMinCount); err != nil {
+		return err
+	}
+
 	configMapName := ConfigMapName(gangInfo.GangID)
 
 	slog.Debug("Registering peer in gang ConfigMap",
@@ -172,26 +217,7 @@ func (c *Coordinator) RegisterPeer(
 		"peer", peer.PodName,
 		"peerIP", peer.PodIP)
 
-	cm, err := c.kubeClient.CoreV1().ConfigMaps(namespace).Get(ctx, configMapName, metav1.GetOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return fmt.Errorf("failed to get ConfigMap %s: %w", configMapName, err)
-		}
-
-		cm = c.createConfigMap(configMapName, namespace, gangInfo)
-	}
-
-	c.addPeerToConfigMap(cm, peer)
-
-	// Update master address (rank 0 is determined by alphabetical sort of pod names)
-	c.updateMasterAddr(cm)
-
-	retryNeeded, err := c.saveConfigMap(ctx, namespace, cm, configMapName, gangInfo.GangID)
-	if retryNeeded {
-		return c.RegisterPeer(ctx, namespace, gangInfo, peer)
-	}
-
-	if err != nil {
+	if err := c.updateConfigMap(ctx, namespace, configMapName, peer); err != nil {
 		return err
 	}
 
@@ -204,42 +230,26 @@ func (c *Coordinator) RegisterPeer(
 	return nil
 }
 
-func (c *Coordinator) saveConfigMap(
+// updateConfigMap updates an existing ConfigMap, retrying on conflict.
+func (c *Coordinator) updateConfigMap(
 	ctx context.Context,
 	namespace string,
-	cm *corev1.ConfigMap,
-	configMapName, gangID string,
-) (bool, error) {
-	var err error
-
-	if cm.ResourceVersion == "" {
-		_, err = c.kubeClient.CoreV1().ConfigMaps(namespace).Create(ctx, cm, metav1.CreateOptions{})
-		if errors.IsAlreadyExists(err) {
-			return true, nil
-		}
-
+	configMapName string,
+	peer types.PeerInfo,
+) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		cm, err := c.kubeClient.CoreV1().ConfigMaps(namespace).Get(ctx, configMapName, metav1.GetOptions{})
 		if err != nil {
-			return false, fmt.Errorf("failed to create ConfigMap %s: %w", configMapName, err)
+			return fmt.Errorf("failed to get ConfigMap %s: %w", configMapName, err)
 		}
 
-		slog.Info("Created gang ConfigMap",
-			"configMap", configMapName,
-			"namespace", namespace,
-			"gangID", gangID)
+		c.addPeerToConfigMap(cm, peer)
+		c.updateMasterAddr(cm)
 
-		return false, nil
-	}
+		_, err = c.kubeClient.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{})
 
-	_, err = c.kubeClient.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{})
-	if errors.IsConflict(err) {
-		return true, nil
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("failed to update ConfigMap %s: %w", configMapName, err)
-	}
-
-	return false, nil
+		return err
+	})
 }
 
 // GetGangConfigMap retrieves the gang ConfigMap.
@@ -259,8 +269,7 @@ func (c *Coordinator) GetGangConfigMap(ctx context.Context, namespace, gangID st
 func ParsePeers(peersData string) []types.PeerInfo {
 	var peers []types.PeerInfo
 
-	lines := strings.Split(strings.TrimSpace(peersData), "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(strings.TrimSpace(peersData), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -296,23 +305,6 @@ func GetRank(podName string, peers []types.PeerInfo) int {
 	}
 
 	return -1
-}
-
-// DeleteGangConfigMap deletes the gang ConfigMap.
-func (c *Coordinator) DeleteGangConfigMap(ctx context.Context, namespace, gangID string) error {
-	configMapName := ConfigMapName(gangID)
-
-	err := c.kubeClient.CoreV1().ConfigMaps(namespace).Delete(ctx, configMapName, metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete ConfigMap %s: %w", configMapName, err)
-	}
-
-	slog.Info("Deleted gang ConfigMap",
-		"configMap", configMapName,
-		"namespace", namespace,
-		"gangID", gangID)
-
-	return nil
 }
 
 // createConfigMap creates a new ConfigMap for gang coordination.

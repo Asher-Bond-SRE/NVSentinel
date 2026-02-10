@@ -15,6 +15,7 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,7 +38,7 @@ type GangRegistration struct {
 }
 
 // GangRegistrationFunc is called after a pod is admitted to register it with a gang.
-type GangRegistrationFunc func(reg GangRegistration)
+type GangRegistrationFunc func(ctx context.Context, reg GangRegistration)
 
 type Handler struct {
 	injector       *Injector
@@ -68,7 +69,7 @@ func (h *Handler) HandleMutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := h.mutate(admissionReview.Request)
+	response := h.mutate(r.Context(), admissionReview.Request)
 	admissionReview.Response = response
 	admissionReview.Response.UID = admissionReview.Request.UID
 
@@ -87,7 +88,7 @@ func (h *Handler) HandleMutate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) mutate(req *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
+func (h *Handler) mutate(ctx context.Context, req *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	if req == nil {
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
@@ -142,7 +143,7 @@ func (h *Handler) mutate(req *admissionv1.AdmissionRequest) *admissionv1.Admissi
 			"gangID", gangCtx.GangID,
 			"configMap", gangCtx.ConfigMapName)
 
-		h.onGangRegister(GangRegistration{
+		h.onGangRegister(ctx, GangRegistration{
 			Namespace:     pod.Namespace,
 			PodName:       podName,
 			GangID:        gangCtx.GangID,

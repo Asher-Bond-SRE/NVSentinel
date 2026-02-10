@@ -60,10 +60,23 @@ func NewGangController(
 }
 
 // RegisterPod is called by the webhook when a pod is admitted that belongs to a gang.
-// This is a no-op since the informer handles everything, but kept for interface compatibility.
-func (c *GangController) RegisterPod(_ webhook.GangRegistration) {
-	// The informer's AddFunc/UpdateFunc handles registration when pod gets IP.
-	// This callback exists so the webhook can notify us, but we don't need to track it.
+// It creates the ConfigMap immediately so schedulers (like KAI) that validate
+// ConfigMap existence before scheduling won't block.
+func (c *GangController) RegisterPod(ctx context.Context, reg webhook.GangRegistration) {
+	if reg.GangID == "" {
+		return
+	}
+
+	// Create ConfigMap immediately (with empty peer list).
+	// This ensures it exists before the scheduler tries to validate it.
+	// Peer IPs will be added later when pods get scheduled and receive IPs.
+	if err := c.coordinator.EnsureConfigMap(ctx, reg.Namespace, reg.GangID, 0); err != nil {
+		slog.Error("Failed to ensure gang ConfigMap",
+			"namespace", reg.Namespace,
+			"gangID", reg.GangID,
+			"configMap", reg.ConfigMapName,
+			"error", err)
+	}
 }
 
 func (c *GangController) Run(ctx context.Context) error {
