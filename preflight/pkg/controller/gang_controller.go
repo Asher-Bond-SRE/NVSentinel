@@ -89,7 +89,11 @@ func (c *GangController) Run() error {
 	slog.Info("Starting gang controller")
 
 	if !cache.WaitForCacheSync(c.ctx.Done(), c.podSynced) {
-		return c.ctx.Err()
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
+
+		return fmt.Errorf("failed to sync gang controller caches")
 	}
 
 	slog.Info("Gang controller cache synced")

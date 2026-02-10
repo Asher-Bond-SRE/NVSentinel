@@ -111,7 +111,7 @@ func Load(path string) (*Config, error) {
 	fileConfig.setDefaults()
 
 	if err := fileConfig.validate(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid file config: %w", err)
 	}
 
 	return &Config{FileConfig: fileConfig}, nil
