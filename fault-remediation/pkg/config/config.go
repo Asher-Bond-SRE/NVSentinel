@@ -166,7 +166,7 @@ func validateOneSupersedingGroup(actionName, group string, resource MaintenanceR
 		}
 
 		if len(maintenanceResource.ImpactedEntityScope) != 0 {
-			return fmt.Errorf("action '%s': supersedingEquivalenceGroup %s cannot have an impactedEntityScope: %s",
+			return fmt.Errorf("action '%s': superseding EquivalenceGroup %s cannot have an ImpactedEntityScope defined: %s",
 				actionName, maintenanceResource.EquivalenceGroup, maintenanceResource.ImpactedEntityScope)
 		}
 

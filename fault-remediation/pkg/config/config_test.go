@@ -226,7 +226,7 @@ func TestTomlConfig_Validate(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorSubstr: "cannot have an impactedEntityScope",
+			errorSubstr: "cannot have an ImpactedEntityScope defined",
 		},
 		{
 			name: "SupersedingEquivalenceGroup cannot have an ImpactedEntityScope (COMPONENT_RESET)",
