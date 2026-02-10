@@ -29,56 +29,38 @@ func TestNewDiscovererFromConfig(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name:     "kubernetes preset",
-			cfg:      config.GangDiscoveryConfig{Scheduler: "kubernetes"},
+			name:     "default to kubernetes native",
+			cfg:      config.GangDiscoveryConfig{},
 			wantName: "kubernetes",
 		},
 		{
-			name:     "volcano preset",
-			cfg:      config.GangDiscoveryConfig{Scheduler: "volcano"},
+			name: "PodGroup-based scheduler",
+			cfg: config.GangDiscoveryConfig{
+				Name:           "volcano",
+				AnnotationKeys: []string{"volcano.sh/pod-group"},
+				PodGroupGVR: config.GVRConfig{
+					Group:    "scheduling.volcano.sh",
+					Version:  "v1beta1",
+					Resource: "podgroups",
+				},
+			},
 			wantName: "volcano",
 		},
 		{
-			name:      "unknown scheduler",
-			cfg:       config.GangDiscoveryConfig{Scheduler: "unknown"},
-			wantError: true,
-		},
-		{
-			name: "custom config",
+			name: "missing annotation keys",
 			cfg: config.GangDiscoveryConfig{
-				Custom: &config.CustomSchedulerConfig{
-					Name:           "my-scheduler",
-					AnnotationKeys: []string{"my.io/pod-group"},
-					PodGroupGVR: config.GVRConfig{
-						Group:    "my.io",
-						Version:  "v1",
-						Resource: "podgroups",
-					},
-				},
-			},
-			wantName: "my-scheduler",
-		},
-		{
-			name: "custom config missing name",
-			cfg: config.GangDiscoveryConfig{
-				Custom: &config.CustomSchedulerConfig{
-					AnnotationKeys: []string{"my.io/pod-group"},
-					PodGroupGVR: config.GVRConfig{
-						Group: "my.io", Version: "v1", Resource: "podgroups",
-					},
+				Name: "my-scheduler",
+				PodGroupGVR: config.GVRConfig{
+					Group: "my.io", Version: "v1", Resource: "podgroups",
 				},
 			},
 			wantError: true,
 		},
 		{
-			name: "custom config missing keys",
+			name: "missing podGroupGVR",
 			cfg: config.GangDiscoveryConfig{
-				Custom: &config.CustomSchedulerConfig{
-					Name: "my-scheduler",
-					PodGroupGVR: config.GVRConfig{
-						Group: "my.io", Version: "v1", Resource: "podgroups",
-					},
-				},
+				Name:           "my-scheduler",
+				AnnotationKeys: []string{"my.io/pod-group"},
 			},
 			wantError: true,
 		},

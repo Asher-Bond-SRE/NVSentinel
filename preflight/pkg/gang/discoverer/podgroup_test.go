@@ -21,6 +21,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func testConfig() PodGroupConfig {
+	return PodGroupConfig{
+		Name:           "test-scheduler",
+		AnnotationKeys: []string{"test.io/pod-group", "scheduling.k8s.io/group-name"},
+		LabelKeys:      []string{"test.io/job-name"},
+		MinCountExpr:   DefaultMinCountExpr,
+	}
+}
+
 func TestPodGroupDiscoverer_CanHandle(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -29,38 +38,28 @@ func TestPodGroupDiscoverer_CanHandle(t *testing.T) {
 		want   bool
 	}{
 		{
-			name:   "Volcano - matches annotation",
-			config: VolcanoConfig(),
+			name:   "matches annotation",
+			config: testConfig(),
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{"volcano.sh/pod-group": "my-pg"},
+					Annotations: map[string]string{"test.io/pod-group": "my-pg"},
 				},
 			},
 			want: true,
 		},
 		{
-			name:   "Volcano - matches job label",
-			config: VolcanoConfig(),
+			name:   "matches label fallback",
+			config: testConfig(),
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"volcano.sh/job-name": "my-job"},
+					Labels: map[string]string{"test.io/job-name": "my-job"},
 				},
 			},
 			want: true,
 		},
 		{
-			name:   "Volcano - matches group-name annotation",
-			config: VolcanoConfig(),
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{"scheduling.k8s.io/group-name": "my-pg"},
-				},
-			},
-			want: true,
-		},
-		{
-			name:   "Volcano - no matching annotation or label",
-			config: VolcanoConfig(),
+			name:   "no matching annotation or label",
+			config: testConfig(),
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"some-label": "value"},
@@ -72,7 +71,10 @@ func TestPodGroupDiscoverer_CanHandle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := NewPodGroupDiscoverer(nil, nil, tt.config)
+			d, err := NewPodGroupDiscoverer(nil, nil, tt.config)
+			if err != nil {
+				t.Fatalf("NewPodGroupDiscoverer() error = %v", err)
+			}
 
 			if got := d.CanHandle(tt.pod); got != tt.want {
 				t.Errorf("CanHandle() = %v, want %v", got, tt.want)
@@ -89,19 +91,19 @@ func TestPodGroupDiscoverer_ExtractGangID(t *testing.T) {
 		want   string
 	}{
 		{
-			name:   "Volcano gang ID format",
-			config: VolcanoConfig(),
+			name:   "gang ID format",
+			config: testConfig(),
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:   "default",
-					Annotations: map[string]string{"volcano.sh/pod-group": "pg-123"},
+					Annotations: map[string]string{"test.io/pod-group": "pg-123"},
 				},
 			},
-			want: "volcano-default-pg-123",
+			want: "test-scheduler-default-pg-123",
 		},
 		{
 			name:   "no matching annotation returns empty",
-			config: VolcanoConfig(),
+			config: testConfig(),
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "test"},
 			},
@@ -111,33 +113,13 @@ func TestPodGroupDiscoverer_ExtractGangID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := NewPodGroupDiscoverer(nil, nil, tt.config)
+			d, err := NewPodGroupDiscoverer(nil, nil, tt.config)
+			if err != nil {
+				t.Fatalf("NewPodGroupDiscoverer() error = %v", err)
+			}
 
 			if got := d.ExtractGangID(tt.pod); got != tt.want {
 				t.Errorf("ExtractGangID() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPresets(t *testing.T) {
-	// Verify all presets are properly configured
-	expected := []string{"volcano"}
-
-	for _, name := range expected {
-		t.Run(name, func(t *testing.T) {
-			fn, ok := Presets[name]
-			if !ok {
-				t.Fatalf("Preset %q not found", name)
-			}
-
-			cfg := fn()
-			if cfg.Name != name {
-				t.Errorf("Preset name = %q, want %q", cfg.Name, name)
-			}
-
-			if cfg.PodGroupGVR.Resource == "" {
-				t.Error("Preset PodGroupGVR.Resource is empty")
 			}
 		})
 	}

@@ -47,58 +47,26 @@ var (
 )
 
 // NewDiscovererFromConfig creates a gang discoverer from configuration.
-// Supports both built-in presets (scheduler field) and custom configs.
+// If Name is set, uses PodGroup-based discovery for the specified discoverer.
+// If Name is empty, defaults to native K8s 1.35+ WorkloadRef API.
 func NewDiscovererFromConfig(
 	cfg config.GangDiscoveryConfig,
 	kubeClient kubernetes.Interface,
 	dynamicClient dynamic.Interface,
 ) (GangDiscoverer, error) {
-	// Handle custom config
-	if cfg.Custom != nil {
-		return newCustomDiscoverer(cfg.Custom, kubeClient, dynamicClient)
-	}
-
-	// Handle built-in presets
-	if cfg.Scheduler == "" {
-		return nil, fmt.Errorf("gangDiscovery.scheduler or gangDiscovery.custom is required")
-	}
-
-	// Kubernetes native (workloadRef) is special - not PodGroup-based
-	if cfg.Scheduler == "kubernetes" {
+	// Default: Kubernetes native WorkloadRef API (K8s 1.35+)
+	if cfg.Name == "" {
 		return discoverer.NewWorkloadRefDiscoverer(kubeClient), nil
 	}
 
-	// PodGroup-based presets
-	presetFn, ok := discoverer.Presets[cfg.Scheduler]
-	if !ok {
-		validPresets := []string{"kubernetes"}
-		for name := range discoverer.Presets {
-			validPresets = append(validPresets, name)
-		}
-
-		return nil, fmt.Errorf("unknown scheduler: %q (valid: %v, or use custom)", cfg.Scheduler, validPresets)
-	}
-
-	return discoverer.NewPodGroupDiscoverer(kubeClient, dynamicClient, presetFn()), nil
-}
-
-// newCustomDiscoverer creates a PodGroup discoverer from custom config.
-func newCustomDiscoverer(
-	cfg *config.CustomSchedulerConfig,
-	kubeClient kubernetes.Interface,
-	dynamicClient dynamic.Interface,
-) (GangDiscoverer, error) {
-	if cfg.Name == "" {
-		return nil, fmt.Errorf("gangDiscovery.custom.name is required")
-	}
-
+	// PodGroup-based discovery
 	if len(cfg.AnnotationKeys) == 0 && len(cfg.LabelKeys) == 0 {
-		return nil, fmt.Errorf("gangDiscovery.custom must have at least one annotationKey or labelKey")
+		return nil, fmt.Errorf("gangDiscovery requires at least one annotationKey or labelKey")
 	}
 
 	gvr := cfg.PodGroupGVR
 	if gvr.Group == "" || gvr.Version == "" || gvr.Resource == "" {
-		return nil, fmt.Errorf("gangDiscovery.custom.podGroupGVR requires group, version, and resource")
+		return nil, fmt.Errorf("gangDiscovery.podGroupGVR requires group, version, and resource")
 	}
 
 	podGroupConfig := discoverer.PodGroupConfig{
@@ -106,11 +74,12 @@ func newCustomDiscoverer(
 		AnnotationKeys: cfg.AnnotationKeys,
 		LabelKeys:      cfg.LabelKeys,
 		PodGroupGVR: schema.GroupVersionResource{
-			Group:    cfg.PodGroupGVR.Group,
-			Version:  cfg.PodGroupGVR.Version,
-			Resource: cfg.PodGroupGVR.Resource,
+			Group:    gvr.Group,
+			Version:  gvr.Version,
+			Resource: gvr.Resource,
 		},
+		MinCountExpr: cfg.MinCountExpr,
 	}
 
-	return discoverer.NewPodGroupDiscoverer(kubeClient, dynamicClient, podGroupConfig), nil
+	return discoverer.NewPodGroupDiscoverer(kubeClient, dynamicClient, podGroupConfig)
 }

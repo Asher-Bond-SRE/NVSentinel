@@ -46,31 +46,26 @@ type DCGMConfig struct {
 	ProcessingStrategy string `yaml:"processingStrategy"`
 }
 
-// GangDiscoveryConfig contains configuration for gang discovery.
+// GangDiscoveryConfig configures gang discovery for PodGroup-based schedulers.
+// If empty (no Name set), defaults to native K8s 1.35+ WorkloadRef API.
 type GangDiscoveryConfig struct {
-	// Scheduler specifies a built-in preset: "volcano", "kubernetes"
-	// Use this for known schedulers. Mutually exclusive with Custom.
-	Scheduler string `yaml:"scheduler,omitempty"`
-
-	// Custom allows configuring a custom PodGroup-based scheduler.
-	// Use this when your scheduler isn't a built-in preset.
-	// Mutually exclusive with Scheduler.
-	Custom *CustomSchedulerConfig `yaml:"custom,omitempty"`
-}
-
-// CustomSchedulerConfig defines a custom PodGroup-based gang scheduler.
-type CustomSchedulerConfig struct {
-	// Name is the scheduler identifier (used in gangID prefix and logging).
-	Name string `yaml:"name"`
+	// Name is the discoverer identifier (used in gangID prefix and logging).
+	Name string `yaml:"name,omitempty"`
 
 	// AnnotationKeys are pod annotation keys to check for the PodGroup name (checked in order).
-	AnnotationKeys []string `yaml:"annotationKeys"`
+	AnnotationKeys []string `yaml:"annotationKeys,omitempty"`
 
 	// LabelKeys are optional pod label keys to check as fallback (checked in order).
 	LabelKeys []string `yaml:"labelKeys,omitempty"`
 
 	// PodGroupGVR specifies the PodGroup CustomResource location.
-	PodGroupGVR GVRConfig `yaml:"podGroupGVR"`
+	PodGroupGVR GVRConfig `yaml:"podGroupGVR,omitempty"`
+
+	// MinCountExpr is a CEL expression to extract the minimum member count from the PodGroup.
+	// The expression receives 'podGroup' as the unstructured object.
+	// Examples: "podGroup.spec.minMember", "podGroup.spec.minReplicas"
+	// Default: "podGroup.spec.minMember"
+	MinCountExpr string `yaml:"minCountExpr,omitempty"`
 }
 
 // GVRConfig specifies a Kubernetes GroupVersionResource.
@@ -160,10 +155,6 @@ func (c *GangCoordinationConfig) setDefaults() {
 }
 
 func (c *FileConfig) validate() error {
-	if c.GangDiscovery.Scheduler != "" && c.GangDiscovery.Custom != nil {
-		return fmt.Errorf("gangDiscovery.scheduler and gangDiscovery.custom are mutually exclusive")
-	}
-
 	if c.GangCoordination.Enabled {
 		timeout, err := time.ParseDuration(c.GangCoordination.Timeout)
 		if err != nil {

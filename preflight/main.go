@@ -135,8 +135,13 @@ func run() error {
 			}
 		}()
 
+		discovererName := "kubernetes"
+		if cfg.GangDiscovery.Name != "" {
+			discovererName = cfg.GangDiscovery.Name
+		}
+
 		slog.Info("Gang coordination enabled",
-			"scheduler", cfg.GangDiscovery.Scheduler,
+			"discoverer", discovererName,
 			"timeout", cfg.GangCoordination.Timeout,
 			"masterPort", cfg.GangCoordination.MasterPort)
 	}

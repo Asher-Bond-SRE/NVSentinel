@@ -30,19 +30,16 @@ rules:
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   
-  # K8s 1.35+ Workload API for native gang scheduling
+  # Gang discovery API - dynamically generated based on gangDiscovery config
+  {{- if .Values.gangDiscovery.podGroupGVR }}
+  # PodGroup-based scheduler ({{ .Values.gangDiscovery.name | default "custom" }})
+  - apiGroups: [{{ .Values.gangDiscovery.podGroupGVR.group | quote }}]
+    resources: [{{ .Values.gangDiscovery.podGroupGVR.resource | quote }}]
+  {{- else }}
+  # K8s 1.35+ Workload API for native gang scheduling (default)
   - apiGroups: ["scheduling.k8s.io"]
     resources: ["workloads"]
+  {{- end }}
     verbs: ["get", "list", "watch"]
-  
-  # Volcano PodGroups for gang discovery 
-  # - apiGroups: ["scheduling.volcano.sh"]
-  #   resources: ["podgroups"]
-  #   verbs: ["get", "list", "watch"]
-  
-  # OSMO/KAI PodGroups for gang discovery (custom scheduler)
-  # - apiGroups: ["scheduling.run.ai"]
-  #   resources: ["podgroups"]
-  #   verbs: ["get", "list", "watch"]
-  
+
 {{- end }}

@@ -134,23 +134,17 @@ networkResourceNames:
   - "nvidia.com/mlnxnics"
 
 # Gang discovery configuration for multi-node preflight checks.
-# Required when gangCoordination.enabled is true.
-gangDiscovery:
-  # Built-in presets (use ONE of: scheduler OR custom)
-  # - volcano: Volcano scheduler with PodGroup (scheduling.volcano.sh/v1beta1)
-  # - kubernetes: K8s 1.35+ native kube-scheduler with Workload API
-  scheduler: "kubernetes"
-
-  # Custom scheduler config (alternative to built-in presets)
-  # Uncomment and configure if using a non-standard PodGroup-based scheduler.
-  # custom:
-  #   name: "osmo-with-kai"
-  #   annotationKeys: []
-  #   labelKeys: ["osmo.group_uuid"]  # optional fallback
-  #   podGroupGVR:
-  #     group: "scheduling.run.ai"
-  #     version: "v2alpha2"
-  #     resource: "podgroups"
+# Default (empty): K8s 1.35+ native WorkloadRef API
+# For PodGroup-based schedulers, set name and other fields:
+gangDiscovery: {}
+  # name: "volcano"
+  # annotationKeys: ["volcano.sh/pod-group"]
+  # labelKeys: ["volcano.sh/job-name"]  # optional fallback
+  # podGroupGVR:
+  #   group: "scheduling.volcano.sh"
+  #   version: "v1beta1"
+  #   resource: "podgroups"
+  # minCountExpr: "podGroup.spec.minMember"  # CEL expression
 
 # Gang coordination configuration for multi-node checks (e.g., nccl-allreduce)
 gangCoordination:

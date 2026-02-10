@@ -31,12 +31,7 @@ data:
       connectorSocket: {{ include "preflight.connectorSocket" . | quote }}
       processingStrategy: {{ include "preflight.processingStrategy" . | quote }}
     gangDiscovery:
-      {{- if .Values.gangDiscovery.custom }}
-      custom:
-        {{- toYaml .Values.gangDiscovery.custom | nindent 8 }}
-      {{- else }}
-      scheduler: {{ .Values.gangDiscovery.scheduler | quote }}
-      {{- end }}
+      {{- toYaml .Values.gangDiscovery | nindent 6 }}
     gangCoordination:
       enabled: {{ .Values.gangCoordination.enabled }}
       timeout: {{ .Values.gangCoordination.timeout | quote }}

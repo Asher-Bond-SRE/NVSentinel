@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/google/cel-go/cel"
 	"github.com/nvidia/nvsentinel/preflight/pkg/gang/types"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -43,38 +43,22 @@ type PodGroupConfig struct {
 
 	// PodGroupGVR is the GroupVersionResource for the PodGroup CRD.
 	PodGroupGVR schema.GroupVersionResource
+
+	// MinCountExpr is a CEL expression to extract minCount from PodGroup.
+	// Receives 'podGroup' as map[string]any. Default: "podGroup.spec.minMember"
+	MinCountExpr string
 }
 
-// VolcanoConfig returns the configuration for Volcano Scheduler.
-func VolcanoConfig() PodGroupConfig {
-	return PodGroupConfig{
-		Name: "volcano",
-		AnnotationKeys: []string{
-			"volcano.sh/pod-group",         // Standard PodGroup annotation
-			"scheduling.k8s.io/group-name", // Volcano Job annotation
-		},
-		LabelKeys: []string{
-			"volcano.sh/job-name", // Volcano Job pods label
-		},
-		PodGroupGVR: schema.GroupVersionResource{
-			Group:    "scheduling.volcano.sh",
-			Version:  "v1beta1",
-			Resource: "podgroups",
-		},
-	}
-}
-
-// Presets maps scheduler names to their configurations.
-var Presets = map[string]func() PodGroupConfig{
-	"volcano": VolcanoConfig,
-}
+// DefaultMinCountExpr is the default CEL expression for extracting minCount.
+const DefaultMinCountExpr = "podGroup.spec.minMember"
 
 // PodGroupDiscoverer discovers gang members using PodGroup CRDs.
 // This is a generic implementation that works with Volcano and similar PodGroup-based schedulers.
 type PodGroupDiscoverer struct {
-	kubeClient    kubernetes.Interface
-	dynamicClient dynamic.Interface
-	config        PodGroupConfig
+	kubeClient      kubernetes.Interface
+	dynamicClient   dynamic.Interface
+	config          PodGroupConfig
+	minCountProgram cel.Program
 }
 
 // NewPodGroupDiscoverer creates a new PodGroup-based gang discoverer.
@@ -82,12 +66,35 @@ func NewPodGroupDiscoverer(
 	kubeClient kubernetes.Interface,
 	dynamicClient dynamic.Interface,
 	config PodGroupConfig,
-) *PodGroupDiscoverer {
-	return &PodGroupDiscoverer{
-		kubeClient:    kubeClient,
-		dynamicClient: dynamicClient,
-		config:        config,
+) (*PodGroupDiscoverer, error) {
+	if config.MinCountExpr == "" {
+		config.MinCountExpr = DefaultMinCountExpr
 	}
+
+	// Compile CEL expression for minCount extraction
+	env, err := cel.NewEnv(
+		cel.Variable("podGroup", cel.MapType(cel.StringType, cel.DynType)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
+	}
+
+	ast, issues := env.Compile(config.MinCountExpr)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("failed to compile minCountExpr %q: %w", config.MinCountExpr, issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CEL program: %w", err)
+	}
+
+	return &PodGroupDiscoverer{
+		kubeClient:      kubeClient,
+		dynamicClient:   dynamicClient,
+		config:          config,
+		minCountProgram: program,
+	}, nil
 }
 
 // Name returns the discoverer name.
@@ -214,7 +221,7 @@ func (d *PodGroupDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod)
 	}, nil
 }
 
-// getPodGroupMinMember retrieves the minMember field from a PodGroup CRD.
+// getPodGroupMinMember retrieves the minMember field from a PodGroup CRD using CEL.
 func (d *PodGroupDiscoverer) getPodGroupMinMember(
 	ctx context.Context,
 	namespace, name string,
@@ -230,14 +237,22 @@ func (d *PodGroupDiscoverer) getPodGroupMinMember(
 		return 0, fmt.Errorf("failed to get PodGroup %s/%s: %w", namespace, name, err)
 	}
 
-	minMember, found, err := unstructured.NestedInt64(podGroup.Object, "spec", "minMember")
+	result, _, err := d.minCountProgram.Eval(map[string]any{
+		"podGroup": podGroup.Object,
+	})
 	if err != nil {
-		return 0, fmt.Errorf("failed to extract minMember from PodGroup: %w", err)
+		return 0, fmt.Errorf("failed to evaluate minCountExpr %q: %w", d.config.MinCountExpr, err)
 	}
 
-	if !found {
-		return 0, fmt.Errorf("PodGroup %s/%s has no spec.minMember field", namespace, name)
+	// Convert result to int
+	switch v := result.Value().(type) {
+	case int64:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case int:
+		return v, nil
+	default:
+		return 0, fmt.Errorf("minCountExpr %q returned non-numeric type %T", d.config.MinCountExpr, v)
 	}
-
-	return int(minMember), nil
 }
