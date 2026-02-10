@@ -31,7 +31,7 @@ import (
 
 // PodGroupConfig defines the configuration for a PodGroup-based gang discoverer.
 type PodGroupConfig struct {
-	// Name is the discoverer name (e.g., "kai", "volcano").
+	// Name is the discoverer name (e.g., "volcano").
 	Name string
 
 	// AnnotationKeys are the annotation keys to check for pod group name (in order).
@@ -42,21 +42,6 @@ type PodGroupConfig struct {
 
 	// PodGroupGVR is the GroupVersionResource for the PodGroup CRD.
 	PodGroupGVR schema.GroupVersionResource
-}
-
-// KAIConfig returns the configuration for KAI Scheduler.
-func KAIConfig() PodGroupConfig {
-	return PodGroupConfig{
-		Name: "kai",
-		// Annotation defined in github.com/NVIDIA/KAI-scheduler/pkg/common/constants
-		// Kept as string literal to avoid transitive dependency conflicts.
-		AnnotationKeys: []string{"pod-group-name"},
-		PodGroupGVR: schema.GroupVersionResource{
-			Group:    "scheduling.run.ai",
-			Version:  "v2alpha2",
-			Resource: "podgroups",
-		},
-	}
 }
 
 // VolcanoConfig returns the configuration for Volcano Scheduler.
@@ -80,12 +65,11 @@ func VolcanoConfig() PodGroupConfig {
 
 // Presets maps scheduler names to their configurations.
 var Presets = map[string]func() PodGroupConfig{
-	"kai":     KAIConfig,
 	"volcano": VolcanoConfig,
 }
 
 // PodGroupDiscoverer discovers gang members using PodGroup CRDs.
-// This is a generic implementation that works with KAI Scheduler, Volcano, and similar.
+// This is a generic implementation that works with Volcano and similar PodGroup-based schedulers.
 type PodGroupDiscoverer struct {
 	kubeClient    kubernetes.Interface
 	dynamicClient dynamic.Interface

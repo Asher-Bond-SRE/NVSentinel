@@ -29,26 +29,6 @@ func TestPodGroupDiscoverer_CanHandle(t *testing.T) {
 		want   bool
 	}{
 		{
-			name:   "KAI - matches annotation",
-			config: KAIConfig(),
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{"pod-group-name": "my-pg"},
-				},
-			},
-			want: true,
-		},
-		{
-			name:   "KAI - no annotation",
-			config: KAIConfig(),
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"some-label": "value"},
-				},
-			},
-			want: false,
-		},
-		{
 			name:   "Volcano - matches annotation",
 			config: VolcanoConfig(),
 			pod: &corev1.Pod{
@@ -78,6 +58,16 @@ func TestPodGroupDiscoverer_CanHandle(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name:   "Volcano - no matching annotation or label",
+			config: VolcanoConfig(),
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"some-label": "value"},
+				},
+			},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,17 +89,6 @@ func TestPodGroupDiscoverer_ExtractGangID(t *testing.T) {
 		want   string
 	}{
 		{
-			name:   "KAI gang ID format",
-			config: KAIConfig(),
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace:   "ml-team",
-					Annotations: map[string]string{"pod-group-name": "training-job"},
-				},
-			},
-			want: "kai-ml-team-training-job",
-		},
-		{
 			name:   "Volcano gang ID format",
 			config: VolcanoConfig(),
 			pod: &corev1.Pod{
@@ -122,7 +101,7 @@ func TestPodGroupDiscoverer_ExtractGangID(t *testing.T) {
 		},
 		{
 			name:   "no matching annotation returns empty",
-			config: KAIConfig(),
+			config: VolcanoConfig(),
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "test"},
 			},
@@ -143,7 +122,7 @@ func TestPodGroupDiscoverer_ExtractGangID(t *testing.T) {
 
 func TestPresets(t *testing.T) {
 	// Verify all presets are properly configured
-	expected := []string{"kai", "volcano"}
+	expected := []string{"volcano"}
 
 	for _, name := range expected {
 		t.Run(name, func(t *testing.T) {

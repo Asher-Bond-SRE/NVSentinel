@@ -38,11 +38,6 @@ func TestNewDiscovererFromConfig(t *testing.T) {
 			wantName: "volcano",
 		},
 		{
-			name:     "kai preset",
-			cfg:      config.GangDiscoveryConfig{Scheduler: "kai"},
-			wantName: "kai",
-		},
-		{
 			name:      "unknown scheduler",
 			cfg:       config.GangDiscoveryConfig{Scheduler: "unknown"},
 			wantError: true,

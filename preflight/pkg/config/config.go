@@ -48,7 +48,7 @@ type DCGMConfig struct {
 
 // GangDiscoveryConfig contains configuration for gang discovery.
 type GangDiscoveryConfig struct {
-	// Scheduler specifies a built-in preset: "kai", "volcano", "coscheduling", "kubernetes"
+	// Scheduler specifies a built-in preset: "volcano", "kubernetes"
 	// Use this for known schedulers. Mutually exclusive with Custom.
 	Scheduler string `yaml:"scheduler,omitempty"`
 

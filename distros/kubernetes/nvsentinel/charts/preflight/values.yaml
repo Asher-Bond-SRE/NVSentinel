@@ -17,7 +17,7 @@ replicaCount: 1
 image:
   repository: xrfxlp/preflight
   pullPolicy: IfNotPresent
-  tag: "12021002"
+  tag: "14101002"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -137,10 +137,9 @@ networkResourceNames:
 # Required when gangCoordination.enabled is true.
 gangDiscovery:
   # Built-in presets (use ONE of: scheduler OR custom)
-  # - kai: KAI Scheduler with PodGroup (scheduling.run.ai/v2alpha2)
   # - volcano: Volcano scheduler with PodGroup (scheduling.volcano.sh/v1beta1)
   # - kubernetes: K8s 1.35+ native kube-scheduler with Workload API
-  scheduler: "kubernetes"
+  scheduler: "volcano"
 
   # Custom scheduler config (alternative to built-in presets)
   # Uncomment and configure if using a non-standard PodGroup-based scheduler.

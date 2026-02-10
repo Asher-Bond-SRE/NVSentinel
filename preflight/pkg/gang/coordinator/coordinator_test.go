@@ -40,8 +40,8 @@ func TestConfigMapName(t *testing.T) {
 		},
 		{
 			name:      "special chars replaced",
-			gangID:    "kai-ns/pod_group",
-			wantExact: "preflight-kai-ns-pod-group",
+			gangID:    "volcano-ns/pod_group",
+			wantExact: "preflight-volcano-ns-pod-group",
 		},
 	}
 
