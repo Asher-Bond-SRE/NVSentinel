@@ -158,6 +158,11 @@ func (c *TomlConfig) validateEquivalenceGroup(actionName string, resource Mainte
 func validateOneSupersedingGroup(actionName, group string, resource MaintenanceResource,
 	remediationActions map[string]MaintenanceResource,
 ) error {
+	if group == resource.EquivalenceGroup {
+		return fmt.Errorf("action '%s': SupersedingEquivalenceGroup cannot include the EquivalenceGroup itself: %s",
+			actionName, group)
+	}
+
 	foundGroup := false
 
 	for _, maintenanceResource := range remediationActions {
@@ -175,11 +180,6 @@ func validateOneSupersedingGroup(actionName, group string, resource MaintenanceR
 
 	if !foundGroup {
 		return fmt.Errorf("action '%s': superseding EquivalenceGroup %s must be defined in config",
-			actionName, group)
-	}
-
-	if group == resource.EquivalenceGroup {
-		return fmt.Errorf("action '%s': SupersedingEquivalenceGroup cannot include the EquivalenceGroup itself: %s",
 			actionName, group)
 	}
 
