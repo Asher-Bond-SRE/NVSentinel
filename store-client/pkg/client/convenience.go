@@ -38,11 +38,14 @@ func UpdateHealthEventStatus(ctx context.Context, client DatabaseClient, eventID
 // Used by fault-quarantine-module
 func UpdateHealthEventNodeQuarantineStatus(ctx context.Context, client DatabaseClient,
 	eventID string, status string) error {
-	quarantineFinishTime := time.Now()
 	fields := map[string]interface{}{
-		"healtheventstatus.nodequarantined":           status,
-		"healtheventstatus.quarantinefinishtimestamp": quarantineFinishTime,
+		"healtheventstatus.nodequarantined": status,
 	}
+
+	if status == "Quarantined" {
+		fields["healtheventstatus.quarantinefinishtimestamp"] = time.Now()
+	}
+
 	return client.UpdateDocumentStatusFields(ctx, eventID, fields)
 }
 

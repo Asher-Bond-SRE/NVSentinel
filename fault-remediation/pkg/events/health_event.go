@@ -15,15 +15,12 @@
 package events
 
 import (
-	"time"
-
 	"github.com/nvidia/nvsentinel/data-models/pkg/model"
 )
 
 // HealthEventDoc represents health event data with JSON "_id" tag for document-based storage.
 type HealthEventDoc struct {
-	ID                          string    `json:"_id"`
-	ReceivedAt                  time.Time `json:"-"`
+	ID                          string `json:"_id"`
 	model.HealthEventWithStatus `json:",inline"`
 }
 

@@ -103,8 +103,6 @@ func (r *FaultRemediationReconciler) Reconcile(
 
 	metrics.TotalEventsReceived.Inc()
 
-	event.Event["_received_at"] = start.Unix()
-
 	healthEventWithStatus, err := r.parseHealthEvent(*event, r.Watcher)
 	if err != nil {
 		return ctrl.Result{}, nil
@@ -453,14 +451,6 @@ func (r *FaultRemediationReconciler) checkExistingCRStatus(ctx context.Context, 
 	return true, "", nil
 }
 
-func extractReceivedAtTimestamp(event datastore.Event) time.Time {
-	if receivedAtInt, ok := event["_received_at"].(int64); ok {
-		return time.Unix(receivedAtInt, 0)
-	}
-
-	return time.Time{}
-}
-
 // parseHealthEvent extracts and parses health event from change stream event
 // The eventWithToken.Event is already the fullDocument extracted by the store-client
 func (r *FaultRemediationReconciler) parseHealthEvent(eventWithToken datastore.EventWithToken,
@@ -511,7 +501,6 @@ func (r *FaultRemediationReconciler) parseHealthEvent(eventWithToken datastore.E
 
 	result.ID = documentID
 	result.HealthEventWithStatus = healthEventWithStatus
-	result.ReceivedAt = extractReceivedAtTimestamp(eventWithToken.Event)
 
 	return result, nil
 }

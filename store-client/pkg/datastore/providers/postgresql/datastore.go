@@ -401,7 +401,7 @@ func createTables(ctx context.Context, db *sql.DB) error {
 
 	for _, timestampColumn := range timestampColumns {
 		if _, err := db.ExecContext(ctx, timestampColumn); err != nil {
-			slog.Warn("Failed to add timestamp column (may already exist)", "error", err)
+			return fmt.Errorf("failed to add timestamp column: %w", err)
 		}
 	}
 

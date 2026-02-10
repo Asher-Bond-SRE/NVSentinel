@@ -25,6 +25,9 @@ import (
 // For status changes, MongoDB only emits UPDATE events (never INSERT with status already set).
 type MongoDBPipelineBuilder struct{}
 
+// NodeQuarantined status field path in health event documents (MongoDB and PostgreSQL).
+const nodeQuarantinedStatusField = "healtheventstatus.nodequarantined"
+
 // NewMongoDBPipelineBuilder creates a new MongoDB pipeline builder
 func NewMongoDBPipelineBuilder() *MongoDBPipelineBuilder {
 	return &MongoDBPipelineBuilder{}
@@ -39,7 +42,7 @@ func NewMongoDBPipelineBuilder() *MongoDBPipelineBuilder {
 //
 // Therefore, we only need to watch for UPDATE operations with updateDescription.
 func (b *MongoDBPipelineBuilder) BuildNodeQuarantineStatusPipeline() datastore.Pipeline {
-	fieldName := "healtheventstatus.nodequarantined"
+	fieldName := nodeQuarantinedStatusField
 	getFieldExpr := datastore.D(
 		datastore.E("$getField", datastore.D(
 			datastore.E("field", fieldName),
@@ -51,6 +54,7 @@ func (b *MongoDBPipelineBuilder) BuildNodeQuarantineStatusPipeline() datastore.P
 			datastore.E("$eq", datastore.A(getFieldExpr, status)),
 		)))
 	}
+
 	return datastore.ToPipeline(
 		datastore.D(
 			datastore.E("$match", datastore.D(

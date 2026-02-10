@@ -107,6 +107,16 @@ var (
 			Name: "node_drainer_pod_eviction_duration_seconds",
 			Help: "Time from event receipt by node-drainer to successful pod eviction completion.",
 			Buckets: []float64{
+				0.1,
+				0.25,
+				0.5,
+				1,
+				2,
+				3,
+				4,
+				5,
+				10,
+				30,
 				60,      // 1 minute
 				300,     // 5 minutes
 				900,     // 15 minutes

@@ -476,6 +476,7 @@ func (c *MongoDBClient) UpdateDocumentStatusFields(
 	if len(fields) == 0 {
 		return nil
 	}
+
 	objectID, err := primitive.ObjectIDFromHex(documentID)
 	if err != nil {
 		return datastore.NewValidationError(
@@ -484,8 +485,10 @@ func (c *MongoDBClient) UpdateDocumentStatusFields(
 			err,
 		).WithMetadata("documentID", documentID)
 	}
+
 	filter := bson.M{"_id": objectID}
 	update := bson.M{"$set": fields}
+
 	_, err = c.mongoCol.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return datastore.NewUpdateError(
@@ -494,6 +497,7 @@ func (c *MongoDBClient) UpdateDocumentStatusFields(
 			err,
 		).WithMetadata("documentID", documentID)
 	}
+
 	return nil
 }
 
