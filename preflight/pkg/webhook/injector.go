@@ -64,6 +64,7 @@ func (i *Injector) InjectInitContainers(pod *corev1.Pod) ([]PatchOperation, *Gan
 
 	// Check if pod is part of a gang
 	var gangCtx *GangContext
+
 	if i.cfg.GangCoordination.Enabled && i.discoverer != nil {
 		if i.discoverer.CanHandle(pod) {
 			gangID := i.discoverer.ExtractGangID(pod)

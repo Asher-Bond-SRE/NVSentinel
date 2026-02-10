@@ -51,7 +51,7 @@ func NewGangController(
 		discoverer:  discoverer,
 	}
 
-	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, _ = podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    c.onPodAdd,
 		UpdateFunc: c.onPodUpdate,
 	})
@@ -118,7 +118,6 @@ func (c *GangController) handlePod(ctx context.Context, pod *corev1.Pod) {
 		return
 	}
 
-	// Get gang info
 	gangInfo, err := c.discoverer.DiscoverPeers(ctx, pod)
 	if err != nil {
 		slog.Error("Failed to discover gang peers",
@@ -126,6 +125,7 @@ func (c *GangController) handlePod(ctx context.Context, pod *corev1.Pod) {
 			"namespace", pod.Namespace,
 			"gangID", gangID,
 			"error", err)
+
 		return
 	}
 
@@ -146,6 +146,7 @@ func (c *GangController) handlePod(ctx context.Context, pod *corev1.Pod) {
 			"namespace", pod.Namespace,
 			"gangID", gangID,
 			"error", err)
+
 		return
 	}
 

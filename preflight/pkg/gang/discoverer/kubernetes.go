@@ -72,7 +72,10 @@ func (w *WorkloadRefDiscoverer) ExtractGangID(pod *corev1.Pod) string {
 }
 
 // DiscoverPeers finds all pods with the same workloadRef.
-func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.Pod) (*types.GangInfo, error) {
+func (w *WorkloadRefDiscoverer) DiscoverPeers(
+	ctx context.Context,
+	pod *corev1.Pod,
+) (*types.GangInfo, error) {
 	if !w.CanHandle(pod) {
 		return nil, nil
 	}
@@ -81,63 +84,24 @@ func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.P
 	podGroup := getWorkloadRefPodGroup(pod)
 	gangID := w.ExtractGangID(pod)
 
-	slog.Debug("Discovering workloadRef gang",
+	slog.Info("Discovering workloadRef gang",
 		"pod", pod.Name,
 		"namespace", pod.Namespace,
 		"workload", workloadName,
 		"podGroup", podGroup,
 		"gangID", gangID)
 
-	// Get expected minCount from Workload CRD
-	expectedMinCount, err := w.getWorkloadMinCount(ctx, pod.Namespace, workloadName, podGroup)
+	expectedMinCount := w.fetchExpectedMinCount(ctx, pod.Namespace, workloadName, podGroup)
+
+	peers, err := w.findPeers(ctx, pod.Namespace, workloadName, podGroup)
 	if err != nil {
-		slog.Warn("Failed to get Workload minCount, will use discovered pod count",
-			"workload", workloadName,
-			"error", err)
-	}
-
-	// List all pods in the namespace and filter by workloadRef
-	pods, err := w.kubeClient.CoreV1().Pods(pod.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pods in namespace %s: %w", pod.Namespace, err)
-	}
-
-	var peers []types.PeerInfo
-
-	for i := range pods.Items {
-		p := &pods.Items[i]
-
-		// Check if pod has same workloadRef
-		pWorkloadName := getWorkloadRefName(p)
-		pPodGroup := getWorkloadRefPodGroup(p)
-
-		if pWorkloadName != workloadName {
-			continue
-		}
-
-		// If we're filtering by podGroup, check it matches
-		if podGroup != "" && pPodGroup != podGroup {
-			continue
-		}
-
-		// Skip pods that are not running or pending
-		if p.Status.Phase != corev1.PodRunning && p.Status.Phase != corev1.PodPending {
-			continue
-		}
-
-		peers = append(peers, types.PeerInfo{
-			PodName:   p.Name,
-			PodIP:     p.Status.PodIP,
-			NodeName:  p.Spec.NodeName,
-			Namespace: p.Namespace,
-		})
+		return nil, err
 	}
 
 	if len(peers) == 0 {
 		return nil, nil
 	}
 
-	// Use discovered count if Workload lookup failed
 	if expectedMinCount == 0 {
 		expectedMinCount = len(peers)
 	}
@@ -156,8 +120,70 @@ func (w *WorkloadRefDiscoverer) DiscoverPeers(ctx context.Context, pod *corev1.P
 	}, nil
 }
 
+// fetchExpectedMinCount retrieves expected count, logging any errors.
+func (w *WorkloadRefDiscoverer) fetchExpectedMinCount(
+	ctx context.Context,
+	namespace, workloadName, podGroup string,
+) int {
+	count, err := w.getWorkloadMinCount(ctx, namespace, workloadName, podGroup)
+	if err != nil {
+		slog.Warn("Failed to get Workload minCount, will use discovered pod count",
+			"workload", workloadName,
+			"error", err)
+	}
+
+	return count
+}
+
+// findPeers lists pods matching the workloadRef.
+func (w *WorkloadRefDiscoverer) findPeers(
+	ctx context.Context,
+	namespace, workloadName, podGroup string,
+) ([]types.PeerInfo, error) {
+	pods, err := w.kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods in namespace %s: %w", namespace, err)
+	}
+
+	var peers []types.PeerInfo
+
+	for i := range pods.Items {
+		p := &pods.Items[i]
+
+		if !w.isPeerMatch(p, workloadName, podGroup) {
+			continue
+		}
+
+		peers = append(peers, types.PeerInfo{
+			PodName:   p.Name,
+			PodIP:     p.Status.PodIP,
+			NodeName:  p.Spec.NodeName,
+			Namespace: p.Namespace,
+		})
+	}
+
+	return peers, nil
+}
+
+// isPeerMatch checks if a pod matches the workloadRef criteria.
+func (w *WorkloadRefDiscoverer) isPeerMatch(p *corev1.Pod, workloadName, podGroup string) bool {
+	pWorkloadName := getWorkloadRefName(p)
+	if pWorkloadName != workloadName {
+		return false
+	}
+
+	if podGroup != "" && getWorkloadRefPodGroup(p) != podGroup {
+		return false
+	}
+
+	return p.Status.Phase == corev1.PodRunning || p.Status.Phase == corev1.PodPending
+}
+
 // getWorkloadMinCount retrieves the minCount from a Workload's podGroup gang policy.
-func (w *WorkloadRefDiscoverer) getWorkloadMinCount(ctx context.Context, namespace, name, podGroup string) (int, error) {
+func (w *WorkloadRefDiscoverer) getWorkloadMinCount(
+	ctx context.Context,
+	namespace, name, podGroup string,
+) (int, error) {
 	workload, err := w.kubeClient.SchedulingV1alpha1().Workloads(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to get Workload %s/%s: %w", namespace, name, err)

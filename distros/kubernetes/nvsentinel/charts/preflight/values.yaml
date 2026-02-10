@@ -17,7 +17,7 @@ replicaCount: 1
 image:
   repository: xrfxlp/preflight
   pullPolicy: IfNotPresent
-  tag: "12590902"
+  tag: "12021002"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -136,19 +136,23 @@ networkResourceNames:
 # Gang discovery configuration for multi-node preflight checks.
 # Required when gangCoordination.enabled is true.
 gangDiscovery:
-  # Scheduler to use for gang discovery:
+  # Built-in presets (use ONE of: scheduler OR custom)
+  # - kai: KAI Scheduler with PodGroup (scheduling.run.ai/v2alpha2)
+  # - volcano: Volcano scheduler with PodGroup (scheduling.volcano.sh/v1beta1)
   # - kubernetes: K8s 1.35+ native kube-scheduler with Workload API
-  # - volcano: Volcano scheduler with PodGroup
-  # - kueue: Kueue with kube-scheduler
-  # - labels: Custom labels (works with any scheduler)
-  scheduler: "volcano"
-  
-  # Label-based discovery configuration (only used when scheduler: labels)
-  labels:
-    # Label key that identifies the gang
-    gangIdLabel: "app.kubernetes.io/gang-id"
-    # Label key that specifies expected gang size (optional)
-    gangSizeLabel: "app.kubernetes.io/gang-size"
+  scheduler: "kubernetes"
+
+  # Custom scheduler config (alternative to built-in presets)
+  # Uncomment and configure if using a non-standard PodGroup-based scheduler.
+  # custom:
+  #   name: "my-scheduler"
+  #   annotationKeys:
+  #     - "my-scheduler.io/pod-group"
+  #   labelKeys: []  # optional fallback
+  #   podGroupGVR:
+  #     group: "scheduling.my-scheduler.io"
+  #     version: "v1"
+  #     resource: "podgroups"
 
 # Gang coordination configuration for multi-node checks (e.g., nccl-allreduce)
 gangCoordination:

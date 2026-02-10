@@ -48,27 +48,36 @@ type DCGMConfig struct {
 
 // GangDiscoveryConfig contains configuration for gang discovery.
 type GangDiscoveryConfig struct {
-	// Scheduler specifies which gang scheduler to use for discovery.
-	// Options: workloadRef (K8s 1.35+), volcano, kueue, labels
-	// Required when gangCoordination.enabled is true.
-	Scheduler string `yaml:"scheduler"`
+	// Scheduler specifies a built-in preset: "kai", "volcano", "coscheduling", "kubernetes"
+	// Use this for known schedulers. Mutually exclusive with Custom.
+	Scheduler string `yaml:"scheduler,omitempty"`
 
-	// Labels contains configuration for label-based discovery.
-	// Only used when scheduler is "labels".
-	Labels LabelDiscoveryConfig `yaml:"labels,omitempty"`
+	// Custom allows configuring a custom PodGroup-based scheduler.
+	// Use this when your scheduler isn't a built-in preset.
+	// Mutually exclusive with Scheduler.
+	Custom *CustomSchedulerConfig `yaml:"custom,omitempty"`
 }
 
-// LabelDiscoveryConfig contains configuration for label-based gang discovery.
-type LabelDiscoveryConfig struct {
-	// GangIDLabel is the label key that identifies the gang.
-	// All pods with the same value for this label are considered part of the same gang.
-	// Default: "app.kubernetes.io/gang-id"
-	GangIDLabel string `yaml:"gangIdLabel,omitempty"`
+// CustomSchedulerConfig defines a custom PodGroup-based gang scheduler.
+type CustomSchedulerConfig struct {
+	// Name is the scheduler identifier (used in gangID prefix and logging).
+	Name string `yaml:"name"`
 
-	// GangSizeLabel is the label key that specifies the expected gang size.
-	// If not present on pods, size is determined by counting discovered pods.
-	// Default: "app.kubernetes.io/gang-size"
-	GangSizeLabel string `yaml:"gangSizeLabel,omitempty"`
+	// AnnotationKeys are pod annotation keys to check for the PodGroup name (checked in order).
+	AnnotationKeys []string `yaml:"annotationKeys"`
+
+	// LabelKeys are optional pod label keys to check as fallback (checked in order).
+	LabelKeys []string `yaml:"labelKeys,omitempty"`
+
+	// PodGroupGVR specifies the PodGroup CustomResource location.
+	PodGroupGVR GVRConfig `yaml:"podGroupGVR"`
+}
+
+// GVRConfig specifies a Kubernetes GroupVersionResource.
+type GVRConfig struct {
+	Group    string `yaml:"group"`
+	Version  string `yaml:"version"`
+	Resource string `yaml:"resource"`
 }
 
 // GangCoordinationConfig contains configuration for gang coordination.
@@ -116,15 +125,6 @@ func Load(path string) (*Config, error) {
 		fileConfig.DCGM.ProcessingStrategy = "EXECUTE_REMEDIATION"
 	}
 
-	// Set gang discovery defaults
-	if fileConfig.GangDiscovery.Labels.GangIDLabel == "" {
-		fileConfig.GangDiscovery.Labels.GangIDLabel = "app.kubernetes.io/gang-id"
-	}
-
-	if fileConfig.GangDiscovery.Labels.GangSizeLabel == "" {
-		fileConfig.GangDiscovery.Labels.GangSizeLabel = "app.kubernetes.io/gang-size"
-	}
-
 	// Set gang coordination defaults
 	if fileConfig.GangCoordination.Timeout == "" {
 		fileConfig.GangCoordination.Timeout = "10m"
@@ -137,6 +137,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid gangCoordination.timeout %q: %w", fileConfig.GangCoordination.Timeout, err)
 	}
+
 	fileConfig.GangCoordination.TimeoutDuration = timeout
 
 	if fileConfig.GangCoordination.MasterPort == 0 {

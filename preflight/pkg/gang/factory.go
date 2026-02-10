@@ -17,20 +17,14 @@ package gang
 import (
 	"fmt"
 
+	"github.com/nvidia/nvsentinel/preflight/pkg/config"
 	"github.com/nvidia/nvsentinel/preflight/pkg/gang/coordinator"
 	"github.com/nvidia/nvsentinel/preflight/pkg/gang/discoverer"
 	"github.com/nvidia/nvsentinel/preflight/pkg/gang/types"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-)
-
-// Scheduler identifies which gang scheduler to use.
-type Scheduler string
-
-const (
-	SchedulerKubernetes Scheduler = "kubernetes" // K8s 1.35+ native (Workload API)
-	SchedulerVolcano    Scheduler = "volcano"    // Volcano PodGroup
 )
 
 // Re-export types for convenience.
@@ -51,18 +45,71 @@ var (
 	GetRank                  = coordinator.GetRank
 )
 
-// NewDiscoverer creates a gang discoverer for the specified scheduler.
-func NewDiscoverer(
-	scheduler Scheduler,
+// NewDiscovererFromConfig creates a gang discoverer from configuration.
+// Supports both built-in presets (scheduler field) and custom configs.
+func NewDiscovererFromConfig(
+	cfg config.GangDiscoveryConfig,
 	kubeClient kubernetes.Interface,
 	dynamicClient dynamic.Interface,
 ) (GangDiscoverer, error) {
-	switch scheduler {
-	case SchedulerKubernetes:
-		return discoverer.NewWorkloadRefDiscoverer(kubeClient), nil
-	case SchedulerVolcano:
-		return discoverer.NewVolcanoDiscoverer(kubeClient, dynamicClient), nil
-	default:
-		return nil, fmt.Errorf("unknown scheduler: %q (valid: kubernetes, volcano)", scheduler)
+	// Handle custom config
+	if cfg.Custom != nil {
+		return newCustomDiscoverer(cfg.Custom, kubeClient, dynamicClient)
 	}
+
+	// Handle built-in presets
+	if cfg.Scheduler == "" {
+		return nil, fmt.Errorf("gangDiscovery.scheduler or gangDiscovery.custom is required")
+	}
+
+	// Kubernetes native (workloadRef) is special - not PodGroup-based
+	if cfg.Scheduler == "kubernetes" {
+		return discoverer.NewWorkloadRefDiscoverer(kubeClient), nil
+	}
+
+	// PodGroup-based presets
+	presetFn, ok := discoverer.Presets[cfg.Scheduler]
+	if !ok {
+		validPresets := []string{"kubernetes"}
+		for name := range discoverer.Presets {
+			validPresets = append(validPresets, name)
+		}
+
+		return nil, fmt.Errorf("unknown scheduler: %q (valid: %v, or use custom)", cfg.Scheduler, validPresets)
+	}
+
+	return discoverer.NewPodGroupDiscoverer(kubeClient, dynamicClient, presetFn()), nil
+}
+
+// newCustomDiscoverer creates a PodGroup discoverer from custom config.
+func newCustomDiscoverer(
+	cfg *config.CustomSchedulerConfig,
+	kubeClient kubernetes.Interface,
+	dynamicClient dynamic.Interface,
+) (GangDiscoverer, error) {
+	if cfg.Name == "" {
+		return nil, fmt.Errorf("gangDiscovery.custom.name is required")
+	}
+
+	if len(cfg.AnnotationKeys) == 0 && len(cfg.LabelKeys) == 0 {
+		return nil, fmt.Errorf("gangDiscovery.custom must have at least one annotationKey or labelKey")
+	}
+
+	gvr := cfg.PodGroupGVR
+	if gvr.Group == "" || gvr.Version == "" || gvr.Resource == "" {
+		return nil, fmt.Errorf("gangDiscovery.custom.podGroupGVR requires group, version, and resource")
+	}
+
+	podGroupConfig := discoverer.PodGroupConfig{
+		Name:           cfg.Name,
+		AnnotationKeys: cfg.AnnotationKeys,
+		LabelKeys:      cfg.LabelKeys,
+		PodGroupGVR: schema.GroupVersionResource{
+			Group:    cfg.PodGroupGVR.Group,
+			Version:  cfg.PodGroupGVR.Version,
+			Resource: cfg.PodGroupGVR.Resource,
+		},
+	}
+
+	return discoverer.NewPodGroupDiscoverer(kubeClient, dynamicClient, podGroupConfig), nil
 }

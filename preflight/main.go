@@ -95,16 +95,14 @@ func run() error {
 	}
 
 	// Create gang discoverer and controller if enabled
-	var discoverer gang.GangDiscoverer
-	var onGangRegister webhook.GangRegistrationFunc
+	var (
+		discoverer     gang.GangDiscoverer
+		onGangRegister webhook.GangRegistrationFunc
+	)
 
 	if cfg.GangCoordination.Enabled {
-		if cfg.GangDiscovery.Scheduler == "" {
-			return fmt.Errorf("gangDiscovery.scheduler is required when gangCoordination.enabled is true")
-		}
-
-		discoverer, err = gang.NewDiscoverer(
-			gang.Scheduler(cfg.GangDiscovery.Scheduler),
+		discoverer, err = gang.NewDiscovererFromConfig(
+			cfg.GangDiscovery,
 			kubeClient,
 			dynamicClient,
 		)
